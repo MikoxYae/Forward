@@ -13,3 +13,8 @@ API_HASH = os.environ.get("API_HASH", "f36fd2ee6e3d3a17c4d244ff6dc1bac8")
 
 OWNER = os.environ.get("OWNER", "Anythingbutnew56")
 OWNER_ID = int(os.environ.get("OWNER_ID", "8229041976"))
+
+START_PIC = os.environ.get(
+    "START_PIC",
+    "https://graph.org/file/b4864a63946e9b1e84238-ccb51f7ec7e7c11458.jpg",
+)
