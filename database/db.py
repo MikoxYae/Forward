@@ -8,7 +8,6 @@ class Database:
         self.db = self._client[db_name]
         self.users = self.db["users"]
         self.sessions = self.db["sessions"]
-        self.settings = self.db["settings"]
 
     # ---------------- USERS ----------------
     async def add_user(self, user_id: int, username: str | None = None):
@@ -42,20 +41,25 @@ class Database:
     async def delete_session(self, user_id: int):
         await self.sessions.delete_one({"_id": user_id})
 
-    # ---------------- SETTINGS (owner config) ----------------
-    async def set_setting(self, key: str, value):
-        await self.settings.update_one(
-            {"_id": key},
-            {"$set": {"value": value}},
+    # ---------------- PER-USER SETTINGS (source / destination) ----------------
+    async def set_user_setting(self, user_id: int, key: str, value):
+        await self.users.update_one(
+            {"_id": user_id},
+            {"$set": {f"settings.{key}": value}},
             upsert=True,
         )
 
-    async def get_setting(self, key: str):
-        doc = await self.settings.find_one({"_id": key})
-        return doc.get("value") if doc else None
+    async def get_user_setting(self, user_id: int, key: str):
+        doc = await self.users.find_one({"_id": user_id})
+        if not doc:
+            return None
+        return (doc.get("settings") or {}).get(key)
 
-    async def clear_setting(self, key: str):
-        await self.settings.delete_one({"_id": key})
+    async def clear_user_setting(self, user_id: int, key: str):
+        await self.users.update_one(
+            {"_id": user_id},
+            {"$unset": {f"settings.{key}": ""}},
+        )
 
 
 db = Database(MONGO_URI, DB_NAME)
