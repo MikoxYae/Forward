@@ -199,17 +199,8 @@ async def stop_cmd(bot: Client, message: Message):
 
 # --------------- Internals ---------------
 async def _send_one(user_client: Client, msg: Message, dest) -> bool:
-    """Try forward → copy → download+reupload. Return True on success."""
-    # 1) Native forward (keeps attribution)
-    try:
-        await msg.forward(dest)
-        return True
-    except FloodWait as e:
-        await asyncio.sleep(e.value + 1)
-    except Exception:
-        pass
-
-    # 2) Copy (fresh send, no forward tag)
+    """Try copy → download+reupload. No native forward (avoids forward tag)."""
+    # 1) Copy (fresh send, no forward tag)
     try:
         await msg.copy(dest)
         return True
@@ -218,7 +209,7 @@ async def _send_one(user_client: Client, msg: Message, dest) -> bool:
     except Exception:
         pass
 
-    # 3) Download + re-upload (works for restricted/protected content)
+    # 2) Download + re-upload (works for restricted/protected content)
     return await _download_reupload(user_client, msg, dest)
 
 
