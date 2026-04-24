@@ -33,9 +33,8 @@ async def set_welcome(bot: Client, message: Message):
     if message.reply_to_message and (
         message.reply_to_message.text or message.reply_to_message.caption
     ):
-        text = message.reply_to_message.text or message.reply_to_message.caption
-        if hasattr(text, "html"):
-            text = text.html
+        src = message.reply_to_message.text or message.reply_to_message.caption
+        text = src.html if hasattr(src, "html") else str(src)
     elif len(message.command) > 1:
         text = message.text.split(None, 1)[1]
 

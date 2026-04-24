@@ -10,7 +10,7 @@ from database.db import db
 
 
 HTML = enums.ParseMode.HTML
-log = logging.getLogger("auto-accept.accept")
+log = logging.getLogger("miko.accept")
 
 
 def _chat_link(chat) -> str:

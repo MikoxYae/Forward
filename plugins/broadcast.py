@@ -15,7 +15,7 @@ from database.db import db
 
 
 HTML = enums.ParseMode.HTML
-log = logging.getLogger("auto-accept.broadcast")
+log = logging.getLogger("miko.broadcast")
 
 
 @Client.on_message(filters.command("broadcast") & filters.private)
@@ -41,7 +41,8 @@ async def broadcast_cmd(bot: Client, message: Message):
     total = await db.total_users()
     last_edit = 0
 
-    async for user_id in db.all_users():
+    async for user_doc in db.all_users():
+        user_id = user_doc["_id"]
         try:
             await message.reply_to_message.copy(chat_id=user_id)
             sent += 1
