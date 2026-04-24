@@ -3,13 +3,15 @@ import os
 import re
 import time
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
 
 from config import APP_ID, API_HASH
 from database.db import db
 
+
+HTML = enums.ParseMode.HTML
 
 # Per-user forward task state
 forward_state: dict[int, dict] = {}
@@ -50,6 +52,14 @@ def _resolve_dest(dest_raw: str):
         return dest_raw
 
 
+def _bold_caption(msg: Message) -> str | None:
+    """Return msg caption wrapped in <b>...</b> with HTML entities preserved,
+    or None if there is no caption."""
+    if not msg.caption:
+        return None
+    return f"<b>{msg.caption.html}</b>"
+
+
 # --------------- Commands ---------------
 @Client.on_message(filters.command("forward") & filters.private)
 async def forward_cmd(bot: Client, message: Message):
@@ -57,35 +67,41 @@ async def forward_cmd(bot: Client, message: Message):
 
     if len(message.command) < 2:
         return await message.reply_text(
-            "**Usage:** `/forward <link>`\n\n"
-            "**Examples:**\n"
-            "`/forward https://t.me/c/1234567890/2-100`\n"
-            "`/forward https://t.me/channelname/5-50`\n"
-            "`/forward https://t.me/c/1234567890/42`  (single message)"
+            "<b>ᴜsᴀɢᴇ:</b> <code>/forward &lt;link&gt;</code>\n\n"
+            "<b>ᴇxᴀᴍᴘʟᴇs:</b>\n"
+            "<code>/forward https://t.me/c/1234567890/2-100</code>\n"
+            "<code>/forward https://t.me/channelname/5-50</code>\n"
+            "<code>/forward https://t.me/c/1234567890/42</code>",
+            parse_mode=HTML,
         )
 
     if forward_state.get(user_id):
         return await message.reply_text(
-            "A forward task is already running. Use /stop to cancel it first."
+            "<b>ᴀ ғᴏʀᴡᴀʀᴅ ᴛᴀsᴋ ɪs ᴀʟʀᴇᴀᴅʏ ʀᴜɴɴɪɴɢ. ᴜsᴇ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ ɪᴛ ғɪʀsᴛ.</b>",
+            parse_mode=HTML,
         )
 
     session_string = await db.get_session(user_id)
     if not session_string:
         return await message.reply_text(
-            "You are not logged in. Use /login first."
+            "<b>ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ʟᴏɢɢᴇᴅ ɪɴ. ᴜsᴇ /login ғɪʀsᴛ.</b>",
+            parse_mode=HTML,
         )
 
     dest_raw = await db.get_user_setting(user_id, "destination")
     if not dest_raw:
         return await message.reply_text(
-            "Destination is not set. Use /setdest <channel_id_or_username>."
+            "<b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɪs ɴᴏᴛ sᴇᴛ. ᴜsᴇ /setdest &lt;ᴄʜᴀɴɴᴇʟ&gt;.</b>",
+            parse_mode=HTML,
         )
 
     parsed = parse_link(message.command[1])
     if not parsed:
         return await message.reply_text(
-            "Invalid link.\nUse `https://t.me/c/<id>/<start>-<end>` "
-            "or `https://t.me/<username>/<start>-<end>`."
+            "<b>ɪɴᴠᴀʟɪᴅ ʟɪɴᴋ. ᴜsᴇ</b> "
+            "<code>https://t.me/c/&lt;id&gt;/&lt;start&gt;-&lt;end&gt;</code> "
+            "<b>ᴏʀ</b> <code>https://t.me/&lt;username&gt;/&lt;start&gt;-&lt;end&gt;</code>.",
+            parse_mode=HTML,
         )
 
     src, start_id, end_id = parsed
@@ -98,14 +114,15 @@ async def forward_cmd(bot: Client, message: Message):
     forward_state[user_id] = {"cancel": False}
 
     status = await message.reply_text(
-        f"**Starting forward**\n"
-        f"Source: `{src}`\n"
-        f"Destination: `{dest}`\n"
-        f"Range: `{start_id}` to `{end_id}` ({total} messages)\n\n"
-        f"Use /stop to cancel."
+        f"<b>sᴛᴀʀᴛɪɴɢ ғᴏʀᴡᴀʀᴅ</b>\n"
+        f"<b>sᴏᴜʀᴄᴇ:</b> <code>{src}</code>\n"
+        f"<b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ:</b> <code>{dest}</code>\n"
+        f"<b>ʀᴀɴɢᴇ:</b> <code>{start_id}</code> <b>ᴛᴏ</b> <code>{end_id}</code> "
+        f"(<code>{total}</code> <b>ᴍᴇssᴀɢᴇs</b>)\n\n"
+        f"<b>ᴜsᴇ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ.</b>",
+        parse_mode=HTML,
     )
 
-    # Spin up the user's MTProto session
     user_client = Client(
         name=f"user_{user_id}",
         api_id=APP_ID,
@@ -117,7 +134,17 @@ async def forward_cmd(bot: Client, message: Message):
         await user_client.start()
     except Exception as e:
         forward_state.pop(user_id, None)
-        return await status.edit_text(f"Failed to start your session: `{e}`")
+        return await status.edit_text(
+            f"<b>ғᴀɪʟᴇᴅ ᴛᴏ sᴛᴀʀᴛ ʏᴏᴜʀ sᴇssɪᴏɴ:</b> <code>{e}</code>",
+            parse_mode=HTML,
+        )
+
+    # Default the user-client's parse mode to HTML so copy_media_group
+    # interprets <b>...</b> in overridden captions.
+    try:
+        user_client.parse_mode = HTML
+    except Exception:
+        pass
 
     ok = fail = skip = 0
     seen_groups: set[str] = set()
@@ -128,7 +155,6 @@ async def forward_cmd(bot: Client, message: Message):
             if forward_state.get(user_id, {}).get("cancel"):
                 break
 
-            # Fetch the message
             try:
                 msg = await user_client.get_messages(src, msg_id)
             except FloodWait as e:
@@ -146,7 +172,6 @@ async def forward_cmd(bot: Client, message: Message):
                 skip += 1
                 continue
 
-            # Album / media-group handling: copy whole group once
             if msg.media_group_id:
                 if msg.media_group_id in seen_groups:
                     continue
@@ -161,16 +186,18 @@ async def forward_cmd(bot: Client, message: Message):
                 else:
                     fail += 1
 
-            # Pacing to avoid floods
             await asyncio.sleep(1.0)
 
             now = time.time()
             if now - last_edit > 5:
                 try:
                     await status.edit_text(
-                        f"**Forwarding...**\n"
-                        f"Progress: `{msg_id - start_id + 1}/{total}`\n"
-                        f"OK: `{ok}` | Failed: `{fail}` | Skipped: `{skip}`"
+                        f"<b>ғᴏʀᴡᴀʀᴅɪɴɢ...</b>\n"
+                        f"<b>ᴘʀᴏɢʀᴇss:</b> <code>{msg_id - start_id + 1}/{total}</code>\n"
+                        f"<b>ᴏᴋ:</b> <code>{ok}</code> <b>|</b> "
+                        f"<b>ғᴀɪʟᴇᴅ:</b> <code>{fail}</code> <b>|</b> "
+                        f"<b>sᴋɪᴘᴘᴇᴅ:</b> <code>{skip}</code>",
+                        parse_mode=HTML,
                     )
                 except Exception:
                     pass
@@ -183,8 +210,11 @@ async def forward_cmd(bot: Client, message: Message):
         forward_state.pop(user_id, None)
 
     await status.edit_text(
-        f"**Done**\n"
-        f"OK: `{ok}` | Failed: `{fail}` | Skipped: `{skip}`"
+        f"<b>ᴅᴏɴᴇ</b>\n"
+        f"<b>ᴏᴋ:</b> <code>{ok}</code> <b>|</b> "
+        f"<b>ғᴀɪʟᴇᴅ:</b> <code>{fail}</code> <b>|</b> "
+        f"<b>sᴋɪᴘᴘᴇᴅ:</b> <code>{skip}</code>",
+        parse_mode=HTML,
     )
 
 
@@ -192,17 +222,25 @@ async def forward_cmd(bot: Client, message: Message):
 async def stop_cmd(bot: Client, message: Message):
     user_id = message.from_user.id
     if user_id not in forward_state:
-        return await message.reply_text("No active forward task.")
+        return await message.reply_text(
+            "<b>ɴᴏ ᴀᴄᴛɪᴠᴇ ғᴏʀᴡᴀʀᴅ ᴛᴀsᴋ.</b>",
+            parse_mode=HTML,
+        )
     forward_state[user_id]["cancel"] = True
-    await message.reply_text("Cancelling current forward task...")
+    await message.reply_text(
+        "<b>ᴄᴀɴᴄᴇʟʟɪɴɢ ᴄᴜʀʀᴇɴᴛ ғᴏʀᴡᴀʀᴅ ᴛᴀsᴋ...</b>",
+        parse_mode=HTML,
+    )
 
 
 # --------------- Internals ---------------
 async def _send_one(user_client: Client, msg: Message, dest) -> bool:
-    """Try copy → download+reupload. No native forward (avoids forward tag)."""
+    """Try copy → download+reupload. Captions are wrapped in <b>...</b>."""
+    bold = _bold_caption(msg)
+
     # 1) Copy (fresh send, no forward tag)
     try:
-        await msg.copy(dest)
+        await msg.copy(dest, caption=bold, parse_mode=HTML)
         return True
     except FloodWait as e:
         await asyncio.sleep(e.value + 1)
@@ -214,22 +252,28 @@ async def _send_one(user_client: Client, msg: Message, dest) -> bool:
 
 
 async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> bool:
-    """Copy a whole album. Falls back to per-item download+reupload."""
+    """Copy a whole album with bold captions. Falls back to per-item download."""
     try:
-        await user_client.copy_media_group(dest, src, anchor_id)
+        group = await user_client.get_media_group(src, anchor_id)
+        captions = [
+            f"<b>{item.caption.html}</b>" if item.caption else ""
+            for item in group
+        ]
+    except Exception:
+        group = []
+        captions = None
+
+    try:
+        await user_client.copy_media_group(dest, src, anchor_id, captions=captions)
         return True
     except FloodWait as e:
         await asyncio.sleep(e.value + 1)
     except Exception:
         pass
 
-    # Fallback: download each item in the group and send individually
-    try:
-        items = await user_client.get_media_group(src, anchor_id)
-    except Exception:
-        items = []
+    # Fallback: download each item individually
     any_ok = False
-    for item in items:
+    for item in group:
         if await _download_reupload(user_client, item, dest):
             any_ok = True
         await asyncio.sleep(0.5)
@@ -237,49 +281,63 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
 
 
 async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
-    """Last-resort: pull media bytes and re-upload as a fresh message."""
+    """Last-resort: pull media bytes and re-upload as a fresh message.
+    Captions and pure-text messages are wrapped in <b>...</b>."""
     try:
         # Pure text
         if msg.text and not msg.media:
             try:
                 await user_client.send_message(
-                    dest, msg.text.html, disable_web_page_preview=True
+                    dest,
+                    f"<b>{msg.text.html}</b>",
+                    parse_mode=HTML,
+                    disable_web_page_preview=True,
                 )
                 return True
             except Exception:
                 return False
 
-        caption = msg.caption.html if msg.caption else None
+        caption = _bold_caption(msg)
         path = await user_client.download_media(msg)
         if not path:
             return False
 
         try:
             if msg.photo:
-                await user_client.send_photo(dest, path, caption=caption)
+                await user_client.send_photo(
+                    dest, path, caption=caption, parse_mode=HTML
+                )
             elif msg.video:
                 await user_client.send_video(
                     dest,
                     path,
                     caption=caption,
+                    parse_mode=HTML,
                     duration=msg.video.duration,
                     width=msg.video.width,
                     height=msg.video.height,
                 )
             elif msg.animation:
-                await user_client.send_animation(dest, path, caption=caption)
+                await user_client.send_animation(
+                    dest, path, caption=caption, parse_mode=HTML
+                )
             elif msg.audio:
                 await user_client.send_audio(
                     dest,
                     path,
                     caption=caption,
+                    parse_mode=HTML,
                     duration=msg.audio.duration,
                     performer=msg.audio.performer,
                     title=msg.audio.title,
                 )
             elif msg.voice:
                 await user_client.send_voice(
-                    dest, path, caption=caption, duration=msg.voice.duration
+                    dest,
+                    path,
+                    caption=caption,
+                    parse_mode=HTML,
+                    duration=msg.voice.duration,
                 )
             elif msg.video_note:
                 await user_client.send_video_note(
@@ -289,11 +347,16 @@ async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
                 await user_client.send_sticker(dest, path)
             elif msg.document:
                 await user_client.send_document(
-                    dest, path, caption=caption,
+                    dest,
+                    path,
+                    caption=caption,
+                    parse_mode=HTML,
                     file_name=msg.document.file_name,
                 )
             else:
-                await user_client.send_document(dest, path, caption=caption)
+                await user_client.send_document(
+                    dest, path, caption=caption, parse_mode=HTML
+                )
             return True
         finally:
             try:
