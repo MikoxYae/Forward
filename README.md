@@ -34,6 +34,7 @@
     ├── logins.py        # /login, /logout, /cancel + button-driven login flow
     ├── settings.py      # /settings, /setsource, /setdest, /clearsettings
     ├── forward.py       # /forward, /stop — clones a message range
+    ├── approve.py       # /approve <chat> — bulk-approve old pending join requests
     ├── accept.py        # auto-accept ChatJoinRequest handler + welcome PM
     ├── welcome.py       # /setwelcome, /clearwelcome, /togglewelcome, /welcome
     ├── stats.py         # /stats, /chats — owner only
@@ -87,6 +88,7 @@
 | <code>/clearsettings</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ᴄʟᴇᴀʀ ʏᴏᴜʀ sᴏᴜʀᴄᴇ & ᴅᴇsᴛɪɴᴀᴛɪᴏɴ</b> |
 | <code>/forward &lt;link&gt;</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>sᴛᴀʀᴛ ᴄʟᴏɴɪɴɢ ᴀ ᴍᴇssᴀɢᴇ ʀᴀɴɢᴇ</b> |
 | <code>/stop</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>sᴛᴏᴘ ᴛʜᴇ ʀᴜɴɴɪɴɢ ғᴏʀᴡᴀʀᴅ</b> |
+| <code>/approve &lt;chat&gt;</code> | <b>ʟᴏɢɢᴇᴅ-ɪɴ ᴜsᴇʀ</b> | <b>ʙᴜʟᴋ-ᴀᴘᴘʀᴏᴠᴇ ᴀʟʟ ᴘᴇɴᴅɪɴɢ ᴊᴏɪɴ ʀᴇǫᴜᴇsᴛs ɪɴ ᴀ ᴄʜᴀɴɴᴇʟ ᴜsɪɴɢ ʏᴏᴜʀ sᴇssɪᴏɴ (ʏᴏᴜ ᴍᴜsᴛ ʙᴇ ᴀᴅᴍɪɴ ᴛʜᴇʀᴇ)</b> |
 | <code>/setwelcome &lt;text&gt;</code> | <b>ᴄʜᴀᴛ ᴀᴅᴍɪɴ</b> | <b>sᴇᴛ ᴄᴜsᴛᴏᴍ ᴡᴇʟᴄᴏᴍᴇ ᴘᴍ ғᴏʀ ᴛʜᴇ ᴄʜᴀᴛ</b> |
 | <code>/clearwelcome</code> | <b>ᴄʜᴀᴛ ᴀᴅᴍɪɴ</b> | <b>ʀᴇsᴇᴛ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴅᴇғᴀᴜʟᴛ</b> |
 | <code>/togglewelcome</code> | <b>ᴄʜᴀᴛ ᴀᴅᴍɪɴ</b> | <b>ᴛᴜʀɴ ᴡᴇʟᴄᴏᴍᴇ ᴘᴍ ᴏɴ / ᴏғғ</b> |
