@@ -128,7 +128,8 @@ class Database:
 
     async def add_promo(self, owner_id: int, target_chat,
                         source_chat_id: int, source_msg_id: int,
-                        interval_minutes: int = 20) -> int:
+                        interval_minutes: int = 20,
+                        content: dict | None = None) -> int:
         promo_id = await self._next_promo_id()
         await self.promos.insert_one({
             "_id": promo_id,
@@ -140,6 +141,7 @@ class Database:
             "enabled": True,
             "last_post_id": None,
             "last_post_at": None,
+            "content": content,
             "created_at": datetime.utcnow(),
         })
         return promo_id

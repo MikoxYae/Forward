@@ -79,21 +79,179 @@ async def _check_promo_limit(user_id: int):
 
 
 # ------------------------------------------------------------------
+# Content extraction / sending
+# ------------------------------------------------------------------
+# We snapshot every promo message at capture time and store the cached
+# content in MongoDB. This way the promo keeps posting forever even if
+# the user later deletes the original message in their DM with the bot
+# (which was the root cause of "Empty messages cannot be copied" +
+# "'NoneType' object has no attribute 'id'" errors).
+
+def _extract_content(message: Message) -> dict | None:
+    """Return a serializable dict describing the message, or None if
+    the message has no supported content."""
+    if message.text:
+        return {
+            "type": "text",
+            "text_html": message.text.html or "",
+        }
+    if message.photo:
+        return {
+            "type": "photo",
+            "file_id": message.photo.file_id,
+            "caption_html": message.caption.html if message.caption else None,
+        }
+    if message.video:
+        return {
+            "type": "video",
+            "file_id": message.video.file_id,
+            "caption_html": message.caption.html if message.caption else None,
+            "duration": message.video.duration,
+            "width": message.video.width,
+            "height": message.video.height,
+        }
+    if message.animation:
+        return {
+            "type": "animation",
+            "file_id": message.animation.file_id,
+            "caption_html": message.caption.html if message.caption else None,
+            "duration": message.animation.duration,
+            "width": message.animation.width,
+            "height": message.animation.height,
+        }
+    if message.audio:
+        return {
+            "type": "audio",
+            "file_id": message.audio.file_id,
+            "caption_html": message.caption.html if message.caption else None,
+            "duration": message.audio.duration,
+            "performer": message.audio.performer,
+            "title": message.audio.title,
+        }
+    if message.voice:
+        return {
+            "type": "voice",
+            "file_id": message.voice.file_id,
+            "caption_html": message.caption.html if message.caption else None,
+            "duration": message.voice.duration,
+        }
+    if message.video_note:
+        return {
+            "type": "video_note",
+            "file_id": message.video_note.file_id,
+            "duration": message.video_note.duration,
+        }
+    if message.sticker:
+        return {
+            "type": "sticker",
+            "file_id": message.sticker.file_id,
+        }
+    if message.document:
+        return {
+            "type": "document",
+            "file_id": message.document.file_id,
+            "caption_html": message.caption.html if message.caption else None,
+            "file_name": message.document.file_name,
+        }
+    return None
+
+
+async def _send_content(bot: Client, target_chat, content: dict):
+    """Send the cached promo content. Returns the sent Message or None."""
+    t = content.get("type")
+    cap = content.get("caption_html") or None
+    fid = content.get("file_id")
+
+    if t == "text":
+        return await bot.send_message(
+            target_chat,
+            content.get("text_html") or "",
+            parse_mode=HTML,
+            disable_web_page_preview=True,
+        )
+    if t == "photo":
+        return await bot.send_photo(
+            target_chat, fid, caption=cap, parse_mode=HTML,
+        )
+    if t == "video":
+        return await bot.send_video(
+            target_chat, fid,
+            caption=cap, parse_mode=HTML,
+            duration=content.get("duration") or 0,
+            width=content.get("width") or 0,
+            height=content.get("height") or 0,
+        )
+    if t == "animation":
+        return await bot.send_animation(
+            target_chat, fid,
+            caption=cap, parse_mode=HTML,
+            duration=content.get("duration") or 0,
+            width=content.get("width") or 0,
+            height=content.get("height") or 0,
+        )
+    if t == "audio":
+        return await bot.send_audio(
+            target_chat, fid,
+            caption=cap, parse_mode=HTML,
+            duration=content.get("duration") or 0,
+            performer=content.get("performer"),
+            title=content.get("title"),
+        )
+    if t == "voice":
+        return await bot.send_voice(
+            target_chat, fid,
+            caption=cap, parse_mode=HTML,
+            duration=content.get("duration") or 0,
+        )
+    if t == "video_note":
+        return await bot.send_video_note(
+            target_chat, fid,
+            duration=content.get("duration") or 0,
+        )
+    if t == "sticker":
+        return await bot.send_sticker(target_chat, fid)
+    if t == "document":
+        return await bot.send_document(
+            target_chat, fid,
+            caption=cap, parse_mode=HTML,
+            file_name=content.get("file_name"),
+        )
+    return None
+
+
+# ------------------------------------------------------------------
 # Posting helpers
 # ------------------------------------------------------------------
 async def _post_once(bot: Client, promo: dict) -> int | None:
     target = promo["target_chat"]
-    src_chat = promo["source_chat_id"]
-    src_msg = promo["source_msg_id"]
+    content = promo.get("content")
+
+    async def _do_send():
+        if content:
+            return await _send_content(bot, target, content)
+        # Backward-compat path for promos created before content caching.
+        src_chat = promo.get("source_chat_id")
+        src_msg = promo.get("source_msg_id")
+        if not src_chat or not src_msg:
+            return None
+        return await bot.copy_message(target, src_chat, src_msg)
+
     try:
-        sent = await bot.copy_message(target, src_chat, src_msg)
+        sent = await _do_send()
+        if not sent:
+            log.warning(
+                f"promo {promo['_id']} send returned no message — "
+                "source may be deleted or content invalid. "
+                "Use /editpromo to re-record the message."
+            )
+            return None
         return sent.id
     except FloodWait as e:
         log.warning(f"promo {promo['_id']} FloodWait {e.value}s on post")
         await asyncio.sleep(e.value + 1)
         try:
-            sent = await bot.copy_message(target, src_chat, src_msg)
-            return sent.id
+            sent = await _do_send()
+            return sent.id if sent else None
         except Exception as ee:
             log.error(f"promo {promo['_id']} retry post failed: {ee}")
             return None
@@ -386,6 +544,16 @@ async def capture_promo_message(bot: Client, message: Message):
     src_msg_id = message.id
     edit_id = state.get("edit_promo_id")
 
+    # Snapshot the message content so we don't depend on the source DM
+    # message staying alive (it can be deleted by the user).
+    content = _extract_content(message)
+    if not content:
+        return await message.reply_text(
+            "<b>ᴜɴsᴜᴘᴘᴏʀᴛᴇᴅ ᴄᴏɴᴛᴇɴᴛ. sᴇɴᴅ ᴛᴇxᴛ, ᴘʜᴏᴛᴏ, ᴠɪᴅᴇᴏ, ᴀᴜᴅɪᴏ, ᴠᴏɪᴄᴇ, "
+            "ᴀɴɪᴍᴀᴛɪᴏɴ, sᴛɪᴄᴋᴇʀ, ᴠɪᴅᴇᴏ ɴᴏᴛᴇ ᴏʀ ᴅᴏᴄᴜᴍᴇɴᴛ.</b>",
+            parse_mode=HTML,
+        )
+
     # ---- Edit flow: replace existing promo's source ----
     if edit_id:
         promo, err = await _get_user_promo(edit_id, user_id)
@@ -395,6 +563,7 @@ async def capture_promo_message(bot: Client, message: Message):
             edit_id,
             source_chat_id=src_chat_id,
             source_msg_id=src_msg_id,
+            content=content,
         )
         if promo.get("enabled"):
             _spawn_task(bot, edit_id)
@@ -418,6 +587,7 @@ async def capture_promo_message(bot: Client, message: Message):
         source_chat_id=src_chat_id,
         source_msg_id=src_msg_id,
         interval_minutes=20,
+        content=content,
     )
     _spawn_task(bot, promo_id)
 
@@ -572,7 +742,9 @@ async def promonow_cmd(bot: Client, message: Message):
     else:
         await message.reply_text(
             f"<b>❌ ᴄᴏᴜʟᴅ ɴᴏᴛ ᴘᴏsᴛ ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code><b>. "
-            "ᴄʜᴇᴄᴋ ʙᴏᴛ ᴀᴅᴍɪɴ ᴘᴇʀᴍɪssɪᴏɴs ᴀɴᴅ sᴇʀᴠᴇʀ ʟᴏɢs.</b>",
+            "ᴄʜᴇᴄᴋ ʙᴏᴛ ᴀᴅᴍɪɴ ᴘᴇʀᴍɪssɪᴏɴs ᴀɴᴅ sᴇʀᴠᴇʀ ʟᴏɢs. "
+            "ɪғ ᴛʜɪs ᴘʀᴏᴍᴏ ᴡᴀs ᴄʀᴇᴀᴛᴇᴅ ʙᴇғᴏʀᴇ ᴛʜᴇ ʟᴀᴛᴇsᴛ ᴜᴘᴅᴀᴛᴇ, ᴜsᴇ "
+            "/editpromo &lt;ɪᴅ&gt; ᴀɴᴅ ʀᴇsᴇɴᴅ ᴛʜᴇ ᴘʀᴏᴍᴏ ᴍᴇssᴀɢᴇ.</b>",
             parse_mode=HTML,
         )
 
@@ -597,22 +769,61 @@ async def promopreview_cmd(bot: Client, message: Message):
     if err:
         return await message.reply_text(err, parse_mode=HTML)
 
-    await message.reply_text(
-        f"<b>ᴘʀᴇᴠɪᴇᴡ ᴏғ ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code><b>:</b>",
-        parse_mode=HTML,
-    )
+    content = promo.get("content")
     try:
-        await bot.copy_message(
-            chat_id=message.chat.id,
-            from_chat_id=promo["source_chat_id"],
-            message_id=promo["source_msg_id"],
-        )
+        if content:
+            sent = await _send_content(bot, message.chat.id, content)
+        else:
+            sent = await bot.copy_message(
+                message.chat.id,
+                promo["source_chat_id"],
+                promo["source_msg_id"],
+            )
+        if not sent:
+            raise RuntimeError("send returned no message")
     except Exception as e:
-        await message.reply_text(
-            f"<b>❌ ᴄᴏᴜʟᴅ ɴᴏᴛ ʟᴏᴀᴅ ᴘʀᴏᴍᴏ ᴄᴏɴᴛᴇɴᴛ:</b> <code>{e}</code>\n"
-            f"<b>ᴜsᴇ /editpromo {promo_id} ᴛᴏ ʀᴇsᴇᴛ ɪᴛ.</b>",
+        return await message.reply_text(
+            f"<b>❌ ᴘʀᴇᴠɪᴇᴡ ғᴀɪʟᴇᴅ:</b> <code>{e}</code>",
             parse_mode=HTML,
         )
+
+
+# ------------------------------------------------------------------
+# /promostatus <id>
+# ------------------------------------------------------------------
+@Client.on_message(filters.command("promostatus") & filters.private)
+async def promostatus_cmd(bot: Client, message: Message):
+    user_id = message.from_user.id
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "<b>ᴜsᴀɢᴇ:</b> <code>/promostatus &lt;promo_id&gt;</code>",
+            parse_mode=HTML,
+        )
+    try:
+        promo_id = int(message.command[1])
+    except ValueError:
+        return await message.reply_text("<b>ɪᴅ ᴍᴜsᴛ ʙᴇ ᴀɴ ɪɴᴛᴇɢᴇʀ.</b>", parse_mode=HTML)
+
+    promo, err = await _get_user_promo(promo_id, user_id)
+    if err:
+        return await message.reply_text(err, parse_mode=HTML)
+
+    last_at = promo.get("last_post_at")
+    last_at_str = last_at.strftime("%Y-%m-%d %H:%M:%S UTC") if last_at else "ɴᴇᴠᴇʀ"
+    state = "ᴏɴ" if promo.get("enabled") else "ᴏғғ"
+    running = "ʏᴇs" if _is_running(promo_id) else "ɴᴏ"
+    ctype = (promo.get("content") or {}).get("type") or "ʟᴇɢᴀᴄʏ-ᴄᴏᴘʏ"
+
+    await message.reply_text(
+        f"<b>ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code>\n"
+        f"<b>ᴛᴀʀɢᴇᴛ:</b> <code>{_fmt_target(promo['target_chat'])}</code>\n"
+        f"<b>ᴄᴏɴᴛᴇɴᴛ ᴛʏᴘᴇ:</b> <code>{ctype}</code>\n"
+        f"<b>ɪɴᴛᴇʀᴠᴀʟ:</b> <code>{promo.get('interval_minutes', 20)}</code> <b>ᴍɪɴ</b>\n"
+        f"<b>ᴇɴᴀʙʟᴇᴅ:</b> <code>{state}</code>\n"
+        f"<b>ʟᴏᴏᴘ ʀᴜɴɴɪɴɢ:</b> <code>{running}</code>\n"
+        f"<b>ʟᴀsᴛ ᴘᴏsᴛᴇᴅ:</b> <code>{last_at_str}</code>",
+        parse_mode=HTML,
+    )
 
 
 # ------------------------------------------------------------------
@@ -630,73 +841,14 @@ async def delpromo_cmd(bot: Client, message: Message):
         promo_id = int(message.command[1])
     except ValueError:
         return await message.reply_text("<b>ɪᴅ ᴍᴜsᴛ ʙᴇ ᴀɴ ɪɴᴛᴇɢᴇʀ.</b>", parse_mode=HTML)
+
     promo, err = await _get_user_promo(promo_id, user_id)
     if err:
         return await message.reply_text(err, parse_mode=HTML)
+
     _kill_task(promo_id)
-    last_id = promo.get("last_post_id")
-    if last_id:
-        try:
-            await bot.delete_messages(promo["target_chat"], last_id)
-        except Exception:
-            pass
     await db.delete_promo(promo_id)
     await message.reply_text(
         f"<b>ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code> <b>ᴅᴇʟᴇᴛᴇᴅ.</b>",
-        parse_mode=HTML,
-    )
-
-
-# ------------------------------------------------------------------
-# /promostatus [<id>]
-# ------------------------------------------------------------------
-@Client.on_message(filters.command("promostatus") & filters.private)
-async def promostatus_cmd(bot: Client, message: Message):
-    user_id = message.from_user.id
-
-    if len(message.command) < 2:
-        lines = ["<b>ʏᴏᴜʀ ᴘʀᴏᴍᴏ sᴛᴀᴛᴜs:</b>", ""]
-        n = 0
-        async for p in db.user_promos(user_id):
-            n += 1
-            state = "ᴏɴ" if p.get("enabled") else "ᴏғғ"
-            running = "ʀᴜɴɴɪɴɢ" if _is_running(p["_id"]) else "sᴛᴏᴘᴘᴇᴅ"
-            last = p.get("last_post_at")
-            last_str = last.strftime("%Y-%m-%d %H:%M:%S UTC") if last else "—"
-            lines.append(
-                f"<b>ɪᴅ</b> <code>{p['_id']}</code> | "
-                f"<b>ᴛᴀʀɢᴇᴛ</b> <code>{_fmt_target(p['target_chat'])}</code> | "
-                f"<b>ᴇᴠᴇʀʏ</b> <code>{p.get('interval_minutes', 20)}</code> <b>ᴍɪɴ</b> | "
-                f"<b>{state}</b> | <b>{running}</b> | <b>ʟᴀsᴛ:</b> <code>{last_str}</code>"
-            )
-        if n == 0:
-            lines.append("<b>ɴᴏ ᴘʀᴏᴍᴏs ʏᴇᴛ.</b>")
-        return await message.reply_text("\n".join(lines), parse_mode=HTML)
-
-    try:
-        promo_id = int(message.command[1])
-    except ValueError:
-        return await message.reply_text("<b>ɪᴅ ᴍᴜsᴛ ʙᴇ ᴀɴ ɪɴᴛᴇɢᴇʀ.</b>", parse_mode=HTML)
-
-    p, err = await _get_user_promo(promo_id, user_id)
-    if err:
-        return await message.reply_text(err, parse_mode=HTML)
-
-    state = "ᴏɴ" if p.get("enabled") else "ᴏғғ"
-    running = "ʀᴜɴɴɪɴɢ" if _is_running(p["_id"]) else "sᴛᴏᴘᴘᴇᴅ"
-    last = p.get("last_post_at")
-    last_str = last.strftime("%Y-%m-%d %H:%M:%S UTC") if last else "—"
-    created = p.get("created_at")
-    created_str = created.strftime("%Y-%m-%d %H:%M:%S UTC") if created else "—"
-
-    await message.reply_text(
-        f"<b>ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code>\n\n"
-        f"<b>ᴛᴀʀɢᴇᴛ:</b> <code>{_fmt_target(p['target_chat'])}</code>\n"
-        f"<b>ɪɴᴛᴇʀᴠᴀʟ:</b> <code>{p.get('interval_minutes', 20)}</code> <b>ᴍɪɴᴜᴛᴇs</b>\n"
-        f"<b>sᴛᴀᴛᴜs:</b> <code>{state}</code>\n"
-        f"<b>ʟᴏᴏᴘ:</b> <code>{running}</code>\n"
-        f"<b>ʟᴀsᴛ ᴘᴏsᴛ ɪᴅ:</b> <code>{p.get('last_post_id') or '—'}</code>\n"
-        f"<b>ʟᴀsᴛ ᴘᴏsᴛ ᴀᴛ:</b> <code>{last_str}</code>\n"
-        f"<b>ᴄʀᴇᴀᴛᴇᴅ:</b> <code>{created_str}</code>",
         parse_mode=HTML,
     )

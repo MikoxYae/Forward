@@ -1,10 +1,16 @@
 import asyncio
 import logging
 import re
+import time
 
 from pyrogram import Client, filters, enums
 from pyrogram import Client as PyroClient
-from pyrogram.errors import FloodWait, ChatAdminRequired, RPCError
+from pyrogram.errors import (
+    FloodWait,
+    ChatAdminRequired,
+    UserAlreadyParticipant,
+    RPCError,
+)
 from pyrogram.types import Message
 
 from config import APP_ID, API_HASH
@@ -25,18 +31,6 @@ def _parse_chat(arg: str):
         if re.match(r"^[a-zA-Z][a-zA-Z0-9_]{3,}$", arg):
             return "@" + arg
         return arg
-
-
-async def _count_pending(uc: PyroClient, chat_id: int, hard_cap: int = 50000) -> int:
-    n = 0
-    try:
-        async for _ in uc.get_chat_join_requests(chat_id):
-            n += 1
-            if n >= hard_cap:
-                break
-    except Exception as e:
-        log.warning(f"_count_pending failed for {chat_id}: {e}")
-    return n
 
 
 @Client.on_message(filters.command("approve") & filters.private)
@@ -103,29 +97,77 @@ async def approve_cmd(bot: Client, message: Message):
 
         await status.edit_text(
             f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
-            f"<b>ғᴇᴛᴄʜɪɴɢ + sᴀᴠɪɴɢ ᴘᴇɴᴅɪɴɢ ʀᴇǫᴜᴇsᴛs…</b>",
+            f"<b>ᴀᴘᴘʀᴏᴠɪɴɢ ᴘᴇɴᴅɪɴɢ ʀᴇǫᴜᴇsᴛs…</b>",
             parse_mode=HTML,
         )
 
-        # Stage 1: enumerate pending requests, save each user to DB
+        # Single stage: enumerate pending requests, save each user to DB
+        # AND approve them one-by-one in the SAME loop.
+        #
+        # This avoids the bulk `approve_all_chat_join_requests` path which
+        # was timing out with -503 on large pending lists. Per-user calls
+        # are cheap individually and FloodWait is handled per call.
+        approved = 0
+        failed = 0
         saved = 0
+        last_edit = 0.0
+
         try:
             async for req in uc.get_chat_join_requests(chat_id):
                 user = req.user
+                if not user:
+                    continue
+
+                # Save to DB right next to the approval — exactly what
+                # the user asked for: "approve mea db mea save krte krte
+                # he user ko approve kro".
                 try:
                     await db.add_user(user.id, user.username, user.first_name)
                     saved += 1
                 except Exception:
                     pass
-                if saved % 200 == 0:
+
+                # Approve this single user.
+                try:
+                    await uc.approve_chat_join_request(chat_id, user.id)
+                    approved += 1
+                except FloodWait as e:
+                    log.warning(f"FloodWait {e.value}s while approving {user.id} in {chat_id}")
+                    await asyncio.sleep(e.value + 1)
+                    try:
+                        await uc.approve_chat_join_request(chat_id, user.id)
+                        approved += 1
+                    except UserAlreadyParticipant:
+                        approved += 1
+                    except Exception as ee:
+                        log.warning(f"approve retry failed for {user.id}: {ee}")
+                        failed += 1
+                except UserAlreadyParticipant:
+                    # Already in the chat — count as success.
+                    approved += 1
+                except ChatAdminRequired:
+                    # No point continuing — bail out cleanly.
+                    raise
+                except RPCError as e:
+                    log.warning(f"approve failed for {user.id}: {e}")
+                    failed += 1
+                except Exception as e:
+                    log.warning(f"approve unexpected for {user.id}: {e}")
+                    failed += 1
+
+                # Live status update every ~2 seconds (Telegram rate-limits edits).
+                now = time.time()
+                if now - last_edit > 2:
                     try:
                         await status.edit_text(
                             f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
-                            f"<b>sᴀᴠᴇᴅ ᴛᴏ ᴅʙ:</b> <code>{saved}</code>",
+                            f"<b>ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>  "
+                            f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed}</code>",
                             parse_mode=HTML,
                         )
                     except Exception:
                         pass
+                    last_edit = now
         except ChatAdminRequired:
             return await status.edit_text(
                 "<b>ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴀɴ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴀᴛ ᴄʜᴀᴛ "
@@ -133,63 +175,9 @@ async def approve_cmd(bot: Client, message: Message):
                 parse_mode=HTML,
             )
         except Exception as e:
-            log.warning(f"fetch pending failed for {chat_id}: {e}")
+            log.warning(f"enumerate pending failed for {chat_id}: {e}")
 
-        if saved == 0:
-            return await status.edit_text(
-                f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
-                f"<b>ɴᴏ ᴘᴇɴᴅɪɴɢ ᴊᴏɪɴ ʀᴇǫᴜᴇsᴛs.</b>",
-                parse_mode=HTML,
-            )
-
-        await status.edit_text(
-            f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
-            f"<b>sᴀᴠᴇᴅ ᴛᴏ ᴅʙ:</b> <code>{saved}</code>\n"
-            f"<b>ʙᴜʟᴋ-ᴀᴘᴘʀᴏᴠɪɴɢ…</b>",
-            parse_mode=HTML,
-        )
-
-        # Stage 2: bulk approve in batches (each call approves up to ~100)
-        # Loop a generous number of times with short sleeps; FloodWait safe.
-        batches_needed = max(2, (saved // 100) + 3)
-        for i in range(batches_needed):
-            try:
-                await uc.approve_all_chat_join_requests(chat_id)
-            except FloodWait as e:
-                log.warning(f"FloodWait {e.value}s during bulk approve batch {i}")
-                await asyncio.sleep(e.value)
-                try:
-                    await uc.approve_all_chat_join_requests(chat_id)
-                except Exception as ee:
-                    log.warning(f"retry batch {i} failed: {ee}")
-            except ChatAdminRequired:
-                return await status.edit_text(
-                    "<b>ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴀɴ ᴀᴅᴍɪɴ ᴡɪᴛʜ \"ᴀᴅᴅ ᴍᴇᴍʙᴇʀs\" ᴘᴇʀᴍɪssɪᴏɴ "
-                    "ɪɴ ᴛʜᴀᴛ ᴄʜᴀᴛ.</b>",
-                    parse_mode=HTML,
-                )
-            except RPCError as e:
-                log.warning(f"bulk approve batch {i}: {e}")
-                break
-
-            if i % 3 == 0 and i > 0:
-                try:
-                    await status.edit_text(
-                        f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
-                        f"<b>sᴀᴠᴇᴅ ᴛᴏ ᴅʙ:</b> <code>{saved}</code>\n"
-                        f"<b>ʙᴜʟᴋ-ᴀᴘᴘʀᴏᴠɪɴɢ… ʙᴀᴛᴄʜ:</b> <code>{i + 1}/{batches_needed}</code>",
-                        parse_mode=HTML,
-                    )
-                except Exception:
-                    pass
-            await asyncio.sleep(0.4)
-
-        # Stage 3: verify how many actually remain
-        await asyncio.sleep(1.5)
-        remaining = await _count_pending(uc, chat_id, hard_cap=200)
-        approved = max(0, saved - remaining)
-
-        # Update counters
+        # Counters
         if approved > 0:
             try:
                 await db.increment_counter("approved_total", by=approved)
@@ -197,14 +185,24 @@ async def approve_cmd(bot: Client, message: Message):
             except Exception:
                 pass
 
-        await status.edit_text(
-            f"<b>✅ ᴅᴏɴᴇ</b>\n\n"
-            f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
-            f"<b>ʀᴇǫᴜᴇsᴛs ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>\n"
-            f"<b>ʀᴇᴍᴀɪɴɪɴɢ ᴘᴇɴᴅɪɴɢ:</b> <code>{remaining}</code>\n"
-            f"<b>ᴜsᴇʀs sᴀᴠᴇᴅ ᴛᴏ ᴅʙ:</b> <code>{saved}</code>",
-            parse_mode=HTML,
-        )
+        if approved == 0 and failed == 0:
+            text = (
+                f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
+                f"<b>ɴᴏ ᴘᴇɴᴅɪɴɢ ᴊᴏɪɴ ʀᴇǫᴜᴇsᴛs.</b>"
+            )
+        else:
+            text = (
+                f"<b>✅ ᴅᴏɴᴇ</b>\n\n"
+                f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
+                f"<b>ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>\n"
+                f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed}</code>\n"
+                f"<b>ᴜsᴇʀs sᴀᴠᴇᴅ ᴛᴏ ᴅʙ:</b> <code>{saved}</code>"
+            )
+
+        try:
+            await status.edit_text(text, parse_mode=HTML)
+        except Exception:
+            await message.reply_text(text, parse_mode=HTML)
     finally:
         try:
             await uc.stop()
