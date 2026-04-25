@@ -201,7 +201,9 @@ async def cancel_cmd(client: Client, message: Message):
         ["start", "help", "login", "logout", "cancel", "settings",
          "setsource", "setdest", "clearsettings", "forward", "stop", "status",
          "approve", "stats", "chats", "broadcast",
-         "setwelcome", "clearwelcome", "togglewelcome", "welcome"]
+         "setwelcome", "clearwelcome", "togglewelcome", "welcome",
+         "setp", "cancelp", "list", "ptime",
+         "promoon", "promooff", "delpromo", "promostatus"]
     )
 )
 async def login_flow(client: Client, message: Message):
