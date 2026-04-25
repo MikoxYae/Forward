@@ -164,5 +164,11 @@ class Database:
     def enabled_promos(self):
         return self.promos.find({"enabled": True})
 
+    def user_promos(self, owner_id: int):
+        return self.promos.find({"owner_id": int(owner_id)})
+
+    async def count_user_promos(self, owner_id: int) -> int:
+        return await self.promos.count_documents({"owner_id": int(owner_id)})
+
 
 db = Database(MONGO_URI, DB_NAME)
