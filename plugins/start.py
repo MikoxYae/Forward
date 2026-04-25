@@ -53,9 +53,10 @@ ACCEPT_TEXT = (
 
 
 PROMO_TEXT = (
-    "<b>📣 Auto-Promo (owner only)</b>\n\n"
-    "Schedule a promo in any channel where the bot is admin. Every X min "
-    "(default 20) the bot deletes the previous post and reposts a fresh copy.\n\n"
+    "<b>📣 Auto-Promo</b>\n\n"
+    "Schedule a promo in any channel where <b>you and the bot</b> are both admin. "
+    "Every X min (default 20) the bot deletes the previous post and reposts a fresh copy.\n\n"
+    "<b>Tip:</b> open <code>/settings</code> for a button-driven panel.\n\n"
     "<b>Setup</b>\n"
     "1. Make the bot admin with <b>Post</b> + <b>Delete</b> messages perms\n"
     "2. <code>/setp &lt;chat_id|@username&gt;</code>\n"
@@ -63,7 +64,7 @@ PROMO_TEXT = (
     "All formatting (links, bold, italic) is preserved\n"
     "4. Loop starts at default 20 min interval\n\n"
     "<b>Manage</b>\n"
-    "<code>/list</code> — all promos\n"
+    "<code>/list</code> — your promos\n"
     "<code>/ptime &lt;id&gt; &lt;min&gt;</code> — change interval\n"
     "<code>/promoon &lt;id&gt;</code> · <code>/promooff &lt;id&gt;</code> — enable / pause\n"
     "<code>/promonow &lt;id&gt;</code> — post immediately\n"
@@ -72,7 +73,7 @@ PROMO_TEXT = (
     "<code>/promostatus [id]</code> — details\n"
     "<code>/delpromo &lt;id&gt;</code> — delete\n"
     "<code>/cancelp</code> — cancel a /setp or /editpromo\n\n"
-    "Multiple promos supported. Enabled promos auto-resume after bot restart."
+    "<b>Limit:</b> 5 promos per user (owner exempt). Enabled promos auto-resume after bot restart."
 )
 
 
@@ -104,6 +105,7 @@ FORWARD_TEXT = (
 def start_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
+            [InlineKeyboardButton("⚙ sᴇᴛᴛɪɴɢs", callback_data="set:open")],
             [
                 InlineKeyboardButton("ʟᴏɢɪɴ", callback_data="login_start"),
                 InlineKeyboardButton("ʟᴏɢᴏᴜᴛ", callback_data="logout_start"),
