@@ -50,6 +50,34 @@ ACCEPT_TEXT = (
 )
 
 
+PROMO_TEXT = (
+    "<b>📣 Auto-Promo (owner only)</b>\n\n"
+    "<b>How it works</b>\n"
+    "Schedule a promotional message in any channel where the bot is admin. "
+    "Every X minutes (default 20) the bot deletes the previous promo post and reposts a fresh copy.\n\n"
+    "<b>Setup</b>\n"
+    "1. Add the bot as admin in the target channel with <b>Post Messages</b> + <b>Delete Messages</b> permissions\n"
+    "2. <code>/setp &lt;chat_id|@username&gt;</code>\n"
+    "3. Bot replies asking for the promo — send any message:\n"
+    "   • plain text (links, bold, italic, etc. are kept)\n"
+    "   • photo / video / audio / voice / animation / sticker / document\n"
+    "   • any combination of media + caption\n"
+    "4. Bot confirms and gives you a promo <code>id</code> — loop starts immediately\n\n"
+    "<b>Manage</b>\n"
+    "<code>/list</code> — list all promos\n"
+    "<code>/ptime &lt;id&gt; &lt;minutes&gt;</code> — change interval\n"
+    "<code>/promoon &lt;id&gt;</code> — enable\n"
+    "<code>/promooff &lt;id&gt;</code> — pause\n"
+    "<code>/delpromo &lt;id&gt;</code> — delete\n"
+    "<code>/promostatus [id]</code> — details\n"
+    "<code>/cancelp</code> — abort a pending /setp\n\n"
+    "<b>Note:</b> all Telegram formatting entities (clickable links inside text, bold, italic, "
+    "spoiler, code, etc.) are preserved exactly because the bot uses copy_message under the hood. "
+    "Multiple promos are supported — each with its own target channel and interval. "
+    "Enabled promos resume automatically after a bot restart."
+)
+
+
 FORWARD_TEXT = (
     "<b>📤 Forward / Clone Media</b>\n\n"
     "<b>How it works</b>\n"
@@ -95,6 +123,7 @@ def commands_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("ᴀᴜᴛᴏ ᴀᴄᴄᴇᴘᴛ", callback_data="show_accept"),
                 InlineKeyboardButton("ғᴏʀᴡᴀʀᴅ", callback_data="show_forward"),
             ],
+            [InlineKeyboardButton("ᴀᴜᴛᴏ ᴘʀᴏᴍᴏ", callback_data="show_promo")],
             [InlineKeyboardButton("ʙᴀᴄᴋ", callback_data="back_start")],
         ]
     )
@@ -169,3 +198,8 @@ async def show_accept(client: Client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex("^show_forward$"))
 async def show_forward(client: Client, query: CallbackQuery):
     await _edit_screen(query, FORWARD_TEXT, back_to_commands_keyboard())
+
+
+@Client.on_callback_query(filters.regex("^show_promo$"))
+async def show_promo(client: Client, query: CallbackQuery):
+    await _edit_screen(query, PROMO_TEXT, back_to_commands_keyboard())
