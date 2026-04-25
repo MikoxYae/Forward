@@ -14,6 +14,7 @@ class Database:
         self.sessions = self.db["sessions"]
         self.chats = self.db["chats"]
         self.settings = self.db["settings"]
+        self.promos = self.db["promos"]
 
     # ---------------- USERS ----------------
     async def add_user(self, user_id: int, username: str | None = None,
@@ -120,6 +121,48 @@ class Database:
     async def get_counter(self, key: str) -> int:
         doc = await self.settings.find_one({"_id": f"counter:{key}"})
         return int((doc or {}).get("value", 0))
+
+    # ---------------- PROMOS ----------------
+    async def _next_promo_id(self) -> int:
+        return await self.increment_counter("promo_seq", by=1)
+
+    async def add_promo(self, owner_id: int, target_chat,
+                        source_chat_id: int, source_msg_id: int,
+                        interval_minutes: int = 20) -> int:
+        promo_id = await self._next_promo_id()
+        await self.promos.insert_one({
+            "_id": promo_id,
+            "owner_id": owner_id,
+            "target_chat": target_chat,
+            "source_chat_id": source_chat_id,
+            "source_msg_id": source_msg_id,
+            "interval_minutes": int(interval_minutes),
+            "enabled": True,
+            "last_post_id": None,
+            "last_post_at": None,
+            "created_at": datetime.utcnow(),
+        })
+        return promo_id
+
+    async def get_promo(self, promo_id: int):
+        return await self.promos.find_one({"_id": int(promo_id)})
+
+    async def update_promo(self, promo_id: int, **fields):
+        if not fields:
+            return
+        await self.promos.update_one(
+            {"_id": int(promo_id)},
+            {"$set": fields},
+        )
+
+    async def delete_promo(self, promo_id: int):
+        await self.promos.delete_one({"_id": int(promo_id)})
+
+    def all_promos(self):
+        return self.promos.find({})
+
+    def enabled_promos(self):
+        return self.promos.find({"enabled": True})
 
 
 db = Database(MONGO_URI, DB_NAME)
