@@ -108,74 +108,14 @@ async def approve_cmd(bot: Client, message: Message):
         # was timing out with -503 on large pending lists. Per-user calls
         # are cheap individually and FloodWait is handled per call.
         #
-        # Failure handling:
-        #   * INPUT_USER_DEACTIVATED  -> account is permanently gone, decline.
-        #   * USER_ID_INVALID         -> Telegram cannot resolve this user
-        #                                via our session, decline.
-        #   * PEER_ID_INVALID         -> same as above, decline.
-        #   * USER_CHANNELS_TOO_MUCH  -> user is in too many channels right
-        #                                now, but they might leave some
-        #                                later. Leave them in the queue.
-        #   * any other RPCError      -> log and skip (do NOT decline) so
-        #                                we never silently throw away a
-        #                                real user just because of a
-        #                                transient API hiccup.
+        # NOTE: any user we cannot approve is simply LEFT in the pending
+        # queue and logged. We never decline / remove anyone — the
+        # decision is reversible (the user might leave a channel and
+        # become approvable later, or it might be a transient API hiccup).
         approved = 0
-        skipped_full = 0   # USER_CHANNELS_TOO_MUCH — kept in queue
-        declined = 0       # auto-removed from queue (dead / invalid)
-        other_failed = 0   # logged only, kept in queue
+        failed = 0
         saved = 0
         last_edit = 0.0
-
-        # Errors that mean "this user can never be approved by anyone, ever".
-        DEAD_ERRORS = (
-            "USER_DEACTIVATED",
-            "INPUT_USER_DEACTIVATED",
-            "USER_ID_INVALID",
-            "PEER_ID_INVALID",
-        )
-
-        def _is_dead(err: Exception) -> bool:
-            s = str(err).upper()
-            return any(code in s for code in DEAD_ERRORS)
-
-        def _is_full(err: Exception) -> bool:
-            return "USER_CHANNELS_TOO_MUCH" in str(err).upper()
-
-        async def _safe_decline(uid: int):
-            """Best-effort decline so a stuck user is removed from the
-            pending list. Returns True if the decline call succeeded."""
-            nonlocal declined
-            try:
-                await uc.decline_chat_join_request(chat_id, uid)
-                declined += 1
-                return True
-            except FloodWait as e:
-                await asyncio.sleep(e.value + 1)
-                try:
-                    await uc.decline_chat_join_request(chat_id, uid)
-                    declined += 1
-                    return True
-                except Exception as ee:
-                    log.info(f"decline retry failed for {uid}: {ee}")
-                    return False
-            except Exception as e:
-                log.info(f"decline failed for {uid}: {e}")
-                return False
-
-        async def _handle_failure(uid: int, err: Exception):
-            """Decide what to do with a user that couldn't be approved."""
-            nonlocal skipped_full, other_failed
-            if _is_full(err):
-                # Don't kick them out — they might join after leaving
-                # some other channel.
-                skipped_full += 1
-            elif _is_dead(err):
-                # Truly broken account — clean it out of the queue.
-                await _safe_decline(uid)
-            else:
-                # Unknown/transient error — keep them, log it, retry later.
-                other_failed += 1
 
         try:
             async for req in uc.get_chat_join_requests(chat_id):
@@ -206,7 +146,7 @@ async def approve_cmd(bot: Client, message: Message):
                         approved += 1
                     except Exception as ee:
                         log.warning(f"approve retry failed for {user.id}: {ee}")
-                        await _handle_failure(user.id, ee)
+                        failed += 1
                 except UserAlreadyParticipant:
                     # Already in the chat — count as success.
                     approved += 1
@@ -215,10 +155,10 @@ async def approve_cmd(bot: Client, message: Message):
                     raise
                 except RPCError as e:
                     log.warning(f"approve failed for {user.id}: {e}")
-                    await _handle_failure(user.id, e)
+                    failed += 1
                 except Exception as e:
                     log.warning(f"approve unexpected for {user.id}: {e}")
-                    await _handle_failure(user.id, e)
+                    failed += 1
 
                 # Live status update every ~2 seconds (Telegram rate-limits edits).
                 now = time.time()
@@ -227,8 +167,7 @@ async def approve_cmd(bot: Client, message: Message):
                         await status.edit_text(
                             f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
                             f"<b>ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>  "
-                            f"<b>sᴋɪᴘᴘᴇᴅ (ғᴜʟʟ):</b> <code>{skipped_full}</code>  "
-                            f"<b>ᴅᴇᴄʟɪɴᴇᴅ (ᴅᴇᴀᴅ):</b> <code>{declined}</code>",
+                            f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed}</code>",
                             parse_mode=HTML,
                         )
                     except Exception:
@@ -242,9 +181,6 @@ async def approve_cmd(bot: Client, message: Message):
             )
         except Exception as e:
             log.warning(f"enumerate pending failed for {chat_id}: {e}")
-
-        # Total failures = everything we didn't approve.
-        failed = skipped_full + declined + other_failed
 
         # Counters
         if approved > 0:
@@ -264,9 +200,7 @@ async def approve_cmd(bot: Client, message: Message):
                 f"<b>✅ ᴅᴏɴᴇ</b>\n\n"
                 f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
                 f"<b>ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>\n"
-                f"<b>sᴋɪᴘᴘᴇᴅ (ᴜsᴇʀ ɪɴ ᴛᴏᴏ ᴍᴀɴʏ ᴄʜᴀɴɴᴇʟs — ᴋᴇᴘᴛ ɪɴ ǫᴜᴇᴜᴇ):</b> <code>{skipped_full}</code>\n"
-                f"<b>ᴅᴇᴄʟɪɴᴇᴅ (ᴅᴇᴀᴅ / ɪɴᴠᴀʟɪᴅ ᴀᴄᴄᴏᴜɴᴛs):</b> <code>{declined}</code>\n"
-                f"<b>ᴏᴛʜᴇʀ ғᴀɪʟᴜʀᴇs (ᴋᴇᴘᴛ ɪɴ ǫᴜᴇᴜᴇ):</b> <code>{other_failed}</code>\n"
+                f"<b>ғᴀɪʟᴇᴅ (ᴋᴇᴘᴛ ɪɴ ǫᴜᴇᴜᴇ):</b> <code>{failed}</code>\n"
                 f"<b>ᴜsᴇʀs sᴀᴠᴇᴅ ᴛᴏ ᴅʙ:</b> <code>{saved}</code>"
             )
 
