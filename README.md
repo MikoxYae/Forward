@@ -20,9 +20,11 @@
 - <b>ᴏᴡɴᴇʀ-ᴏɴʟʏ <code>/stats</code>, <code>/chats</code>, <code>/broadcast</code></b>
 - <b>ғʟᴏᴏᴅᴡᴀɪᴛ-sᴀғᴇ ᴀɴᴅ ᴀᴜᴛᴏ-ᴄʟᴇᴀɴs ᴅᴇᴀᴅ ᴜsᴇʀs ᴏɴ ʙʀᴏᴀᴅᴄᴀsᴛ</b>
 
-### ᴀᴜᴛᴏ-ᴘʀᴏᴍᴏ <b>(ɴᴇᴡ)</b>
+### ᴀᴜᴛᴏ-ᴘʀᴏᴍᴏ <b>(ᴍᴜʟᴛɪ-ᴜsᴇʀ)</b>
 
-- <b>ᴏᴡɴᴇʀ ᴄᴀɴ sᴄʜᴇᴅᴜʟᴇ ᴀ ᴘʀᴏᴍᴏᴛɪᴏɴᴀʟ ᴍᴇssᴀɢᴇ ɪɴ ᴀɴʏ ᴄʜᴀɴɴᴇʟ ᴡʜᴇʀᴇ ᴛʜᴇ ʙᴏᴛ ɪs ᴀᴅᴍɪɴ.</b>
+- <b><i>ᴀɴʏ ᴜsᴇʀ</i> ᴄᴀɴ sᴄʜᴇᴅᴜʟᴇ ᴘʀᴏᴍᴏs ɪɴ ᴀ ᴄʜᴀɴɴᴇʟ ᴡʜᴇʀᴇ <i>ʙᴏᴛʜ ᴛʜᴇ ʙᴏᴛ ᴀɴᴅ ᴛʜᴇʏ</i> ᴀʀᴇ ᴀᴅᴍɪɴ.</b>
+- <b>ᴜsᴇʀs ᴏɴʟʏ sᴇᴇ / ᴇᴅɪᴛ / ᴅᴇʟᴇᴛᴇ ᴛʜᴇɪʀ ᴏᴡɴ ᴘʀᴏᴍᴏs — ɴᴇᴠᴇʀ sᴏᴍᴇᴏɴᴇ ᴇʟsᴇ's.</b>
+- <b>ᴇᴀᴄʜ ᴜsᴇʀ ᴄᴀɴ ʜᴀᴠᴇ ᴜᴘ ᴛᴏ <code>5</code> ᴘʀᴏᴍᴏs (ᴏᴡɴᴇʀ ɪs ᴇxᴇᴍᴘᴛ).</b>
 - <b>ᴇᴠᴇʀʏ <code>X</code> ᴍɪɴᴜᴛᴇs (ᴅᴇғᴀᴜʟᴛ 20) ᴛʜᴇ ʙᴏᴛ:</b>
   1. <b>ᴅᴇʟᴇᴛᴇs ᴛʜᴇ ᴘʀᴇᴠɪᴏᴜs ᴘʀᴏᴍᴏ ᴘᴏsᴛ ɪᴛ ᴍᴀᴅᴇ</b>
   2. <b>ᴘᴏsᴛs ᴀ ғʀᴇsʜ ᴄᴏᴘʏ ᴏғ ᴛʜᴇ sᴀᴍᴇ ᴘʀᴏᴍᴏ</b>
@@ -31,6 +33,17 @@
 - <b>ᴀʟʟ ᴛᴇʟᴇɢʀᴀᴍ ғᴏʀᴍᴀᴛᴛɪɴɢ ᴇɴᴛɪᴛɪᴇs ᴀʀᴇ ᴘʀᴇsᴇʀᴠᴇᴅ — <i>ᴄʟɪᴄᴋᴀʙʟᴇ ʟɪɴᴋs ɪɴsɪᴅᴇ ᴛᴇxᴛ, ʙᴏʟᴅ, ɪᴛᴀʟɪᴄ, sᴘᴏɪʟᴇʀ, ᴄᴏᴅᴇ ᴇᴛᴄ.</i> — ʙᴇᴄᴀᴜsᴇ ᴛʜᴇ ʙᴏᴛ ᴜsᴇs <code>copy_message</code> ᴜɴᴅᴇʀ ᴛʜᴇ ʜᴏᴏᴅ.</b>
 - <b>sᴜʀᴠɪᴠᴇs ʙᴏᴛ ʀᴇsᴛᴀʀᴛs — ᴀʟʟ ᴇɴᴀʙʟᴇᴅ ᴘʀᴏᴍᴏs ʀᴇsᴜᴍᴇ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ғʀᴏᴍ ᴍᴏɴɢᴏᴅʙ.</b>
 - <b>ғʟᴏᴏᴅᴡᴀɪᴛ-sᴀғᴇ ᴀɴᴅ ɪᴅᴇᴍᴘᴏᴛᴇɴᴛ — ᴏʟᴅ ᴘᴏsᴛs ᴀʀᴇ ᴄʟᴇᴀɴᴇᴅ ᴜᴘ ᴇᴠᴇɴ ɪғ ᴛʜᴇ ʟᴏᴏᴘ ʀᴇsᴛᴀʀᴛs.</b>
+
+### sᴇᴛᴛɪɴɢs ᴘᴀɴᴇʟ <b>(ɴᴇᴡ)</b>
+
+- <b>ᴀ sɪɴɢʟᴇ ᴘʜᴏᴛᴏ + ᴄᴀᴘᴛɪᴏɴ + ɪɴʟɪɴᴇ-ʙᴜᴛᴛᴏɴ ᴍᴇssᴀɢᴇ ᴜɴᴅᴇʀ <code>/settings</code>.</b>
+- <b>ᴇᴠᴇʀʏ ᴀᴄᴛɪᴏɴ ᴇᴅɪᴛs ᴛʜᴇ <i>sᴀᴍᴇ ᴍᴇssᴀɢᴇ</i> — ᴄʜᴀᴛ sᴛᴀʏs ᴄʟᴇᴀɴ.</b>
+- <b>ᴄᴏᴠᴇʀs:</b>
+  - <b>ɴᴇᴡ ᴘʀᴏᴍᴏ (ᴛᴀʀɢᴇᴛ → ᴄᴏɴᴛᴇɴᴛ ᴡɪᴢᴀʀᴅ)</b>
+  - <b>ᴍʏ ᴘʀᴏᴍᴏs ʟɪsᴛ → ᴘᴇʀ-ᴘʀᴏᴍᴏ ᴀᴄᴛɪᴏɴs (ᴛɪᴍᴇ, ᴇᴅɪᴛ, ᴘᴏsᴛ ɴᴏᴡ, ᴘʀᴇᴠɪᴇᴡ, ᴏɴ/ᴏғғ, ᴅᴇʟᴇᴛᴇ)</b>
+  - <b>ғᴏʀᴡᴀʀᴅ: sᴇᴛ sᴏᴜʀᴄᴇ, sᴇᴛ ᴅᴇsᴛ, ᴄʟᴇᴀʀ, ʟᴏɢᴏᴜᴛ, ʟᴏɢɪɴ ʜᴇʟᴘ</b>
+- <b>ᴡʜᴇɴ ᴛʜᴇ ᴘᴀɴᴇʟ ᴘʀᴏᴍᴘᴛs ғᴏʀ ɪɴᴘᴜᴛ, ʏᴏᴜʀ ʀᴇᴘʟʏ ᴍᴇssᴀɢᴇ ɪs ᴄᴏɴsᴜᴍᴇᴅ ᴀɴᴅ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇᴅ (ʙᴇsᴛ-ᴇғғᴏʀᴛ).</b>
+- <b>ᴄᴀɴ ᴀʟsᴏ ʙᴇ ᴏᴘᴇɴᴇᴅ ғʀᴏᴍ ᴛʜᴇ <code>⚙ sᴇᴛᴛɪɴɢs</code> ʙᴜᴛᴛᴏɴ ᴏɴ <code>/start</code>.</b>
 
 ## ᴘʀᴏᴊᴇᴄᴛ sᴛʀᴜᴄᴛᴜʀᴇ
 
@@ -42,16 +55,16 @@
 ├── database/
 │   └── db.py            # mongodb (motor) wrapper — users, sessions, chats, settings, counters, promos
 └── plugins/
-    ├── start.py         # /start, /help — photo + Login/Logout buttons
+    ├── start.py         # /start, /help — photo + Login/Logout/Settings buttons
     ├── logins.py        # /login, /logout, /cancel + button-driven login flow
-    ├── settings.py      # /settings, /setsource, /setdest, /clearsettings
+    ├── settings.py      # /settings — GUI panel (photo + inline buttons + state machine)
     ├── forward.py       # /forward, /stop — clones a message range
     ├── approve.py       # /approve <chat> — bulk-approve old pending join requests
     ├── accept.py        # auto-accept ChatJoinRequest handler + welcome PM
     ├── welcome.py       # /setwelcome, /clearwelcome, /togglewelcome, /welcome
     ├── stats.py         # /stats, /chats — owner only
     ├── broadcast.py     # /broadcast — owner only
-    └── promo.py         # /setp, /list, /ptime, /promoon, /promooff, /delpromo, /promostatus, /cancelp — owner only
+    └── promo.py         # /setp, /list, /ptime, /promoon, /promooff, /delpromo, /promostatus, /cancelp — multi-user (5/user, owner exempt)
 ```
 
 ## sᴇᴛᴜᴘ
@@ -92,6 +105,7 @@
 
 <b>ᴛʜᴇ</b> <code>/start</code> <b>sᴄʀᴇᴇɴ ɪs ᴀ sʜᴏʀᴛ ɢʀᴇᴇᴛɪɴɢ ᴡɪᴛʜ ʙᴜᴛᴛᴏɴs:</b>
 
+- <b>⚙ sᴇᴛᴛɪɴɢs</b> — <b>ᴏᴘᴇɴs ᴛʜᴇ ɢᴜɪ ᴘᴀɴᴇʟ (sᴀᴍᴇ ᴀs <code>/settings</code>)</b>
 - <b>ʟᴏɢɪɴ / ʟᴏɢᴏᴜᴛ</b> — <b>ᴍᴀɴᴀɢᴇ ʏᴏᴜʀ ᴛᴇʟᴇɢʀᴀᴍ ᴀᴄᴄᴏᴜɴᴛ sᴇssɪᴏɴ</b>
 - <b>ᴄᴏᴍᴍᴀɴᴅs</b> — <b>ᴏᴘᴇɴs ᴀ sᴜʙ-ᴍᴇɴᴜ ᴡɪᴛʜ ᴛᴡᴏ ʙᴜᴛᴛᴏɴs:</b>
   - <b>ᴀᴜᴛᴏ ᴀᴄᴄᴇᴘᴛ</b> — <b>sʜᴏᴡs ᴀʟʟ ᴀᴜᴛᴏ-ᴀᴄᴄᴇᴘᴛ + ᴡᴇʟᴄᴏᴍᴇ ᴘᴍ + <code>/approve</code> ɪɴsᴛʀᴜᴄᴛɪᴏɴs (ᴇɴɢʟɪsʜ)</b>
@@ -117,7 +131,7 @@
 | <code>/login</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ʟᴏɢɪɴ ᴡɪᴛʜ ʏᴏᴜʀ ᴛᴇʟᴇɢʀᴀᴍ ᴀᴄᴄᴏᴜɴᴛ</b> |
 | <code>/logout</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ʀᴇᴍᴏᴠᴇ ʏᴏᴜʀ sᴀᴠᴇᴅ sᴇssɪᴏɴ</b> |
 | <code>/cancel</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ᴄᴀɴᴄᴇʟ ᴄᴜʀʀᴇɴᴛ ʟᴏɢɪɴ ғʟᴏᴡ</b> |
-| <code>/settings</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ᴠɪᴇᴡ ʏᴏᴜʀ ᴄᴜʀʀᴇɴᴛ sᴏᴜʀᴄᴇ & ᴅᴇsᴛɪɴᴀᴛɪᴏɴ</b> |
+| <code>/settings</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ᴏᴘᴇɴ ᴛʜᴇ ɢᴜɪ ᴘᴀɴᴇʟ (ᴘʀᴏᴍᴏs, ғᴏʀᴡᴀʀᴅ, ʟᴏɢɪɴ — ᴀʟʟ ʙᴜᴛᴛᴏɴ-ᴅʀɪᴠᴇɴ)</b> |
 | <code>/setsource &lt;id&gt;</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>sᴇᴛ ʏᴏᴜʀ sᴏᴜʀᴄᴇ ᴄʜᴀɴɴᴇʟ</b> |
 | <code>/setdest &lt;id&gt;</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>sᴇᴛ ʏᴏᴜʀ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ᴄʜᴀɴɴᴇʟ</b> |
 | <code>/clearsettings</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ᴄʟᴇᴀʀ ʏᴏᴜʀ sᴏᴜʀᴄᴇ & ᴅᴇsᴛɪɴᴀᴛɪᴏɴ</b> |
@@ -128,17 +142,19 @@
 
 | ᴄᴏᴍᴍᴀɴᴅ | ᴡʜᴏ | ᴅᴇsᴄʀɪᴘᴛɪᴏɴ |
 | --- | --- | --- |
-| <code>/setp &lt;chat&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>sᴛᴀʀᴛ sᴇᴛᴜᴘ — ʙᴏᴛ ᴀsᴋs ʏᴏᴜ ᴛᴏ sᴇɴᴅ ᴛʜᴇ ᴘʀᴏᴍᴏ ᴍᴇssᴀɢᴇ ɴᴇxᴛ. ᴠᴀʟɪᴅᴀᴛᴇs ᴀᴅᴍɪɴ + ᴘᴏsᴛ/ᴅᴇʟᴇᴛᴇ ᴘᴇʀᴍɪssɪᴏɴs ᴜᴘғʀᴏɴᴛ.</b> |
-| <code>/cancelp</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴀʙᴏʀᴛ ᴀ ᴘᴇɴᴅɪɴɢ <code>/setp</code> ᴏʀ <code>/editpromo</code> ғʟᴏᴡ</b> |
-| <code>/list</code> · <code>/listp</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ʟɪsᴛ ᴀʟʟ ᴘʀᴏᴍᴏs (ɪᴅ, ᴛᴀʀɢᴇᴛ, ɪɴᴛᴇʀᴠᴀʟ, ᴏɴ/ᴏғғ)</b> |
-| <code>/ptime &lt;id&gt; &lt;minutes&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴄʜᴀɴɢᴇ ᴛʜᴇ ɪɴᴛᴇʀᴠᴀʟ ғᴏʀ ᴀ ᴘʀᴏᴍᴏ (ʟᴏᴏᴘ ʀᴇsᴛᴀʀᴛs ᴄʟᴇᴀɴʟʏ)</b> |
-| <code>/promoon &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴇɴᴀʙʟᴇ ᴀ ᴘʀᴏᴍᴏ ʟᴏᴏᴘ</b> |
-| <code>/promooff &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴘᴀᴜsᴇ ᴀ ᴘʀᴏᴍᴏ ʟᴏᴏᴘ</b> |
+| <code>/setp &lt;chat&gt;</code> | <b>ᴀɴʏ ᴀᴅᴍɪɴ</b> | <b>sᴛᴀʀᴛ sᴇᴛᴜᴘ — ᴠᴀʟɪᴅᴀᴛᴇs ʙᴏᴛ ᴀᴅᴍɪɴ + <i>ʏᴏᴜʀ</i> ᴀᴅᴍɪɴ sᴛᴀᴛᴜs + 5-ᴘʀᴏᴍᴏ ʟɪᴍɪᴛ ᴜᴘғʀᴏɴᴛ. ʙᴏᴛ ᴀsᴋs ʏᴏᴜ ᴛᴏ sᴇɴᴅ ᴛʜᴇ ᴘʀᴏᴍᴏ ᴍᴇssᴀɢᴇ ɴᴇxᴛ.</b> |
+| <code>/cancelp</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ᴀʙᴏʀᴛ ᴀ ᴘᴇɴᴅɪɴɢ <code>/setp</code> ᴏʀ <code>/editpromo</code> ғʟᴏᴡ</b> |
+| <code>/list</code> · <code>/listp</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ʟɪsᴛ <i>ʏᴏᴜʀ</i> ᴘʀᴏᴍᴏs (ɪᴅ, ᴛᴀʀɢᴇᴛ, ɪɴᴛᴇʀᴠᴀʟ, ᴏɴ/ᴏғғ)</b> |
+| <code>/ptime &lt;id&gt; &lt;minutes&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴄʜᴀɴɢᴇ ᴛʜᴇ ɪɴᴛᴇʀᴠᴀʟ ғᴏʀ <i>ʏᴏᴜʀ</i> ᴘʀᴏᴍᴏ (ʟᴏᴏᴘ ʀᴇsᴛᴀʀᴛs ᴄʟᴇᴀɴʟʏ)</b> |
+| <code>/promoon &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴇɴᴀʙʟᴇ <i>ʏᴏᴜʀ</i> ᴘʀᴏᴍᴏ ʟᴏᴏᴘ</b> |
+| <code>/promooff &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴘᴀᴜsᴇ <i>ʏᴏᴜʀ</i> ᴘʀᴏᴍᴏ ʟᴏᴏᴘ</b> |
 | <code>/promonow &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴅᴇʟᴇᴛᴇ ᴘʀᴇᴠɪᴏᴜs + ᴘᴏsᴛ ɴᴏᴡ ᴡɪᴛʜᴏᴜᴛ ᴡᴀɪᴛɪɴɢ ғᴏʀ ᴛʜᴇ ɴᴇxᴛ ᴛɪᴄᴋ</b> |
-| <code>/editpromo &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ʀᴇᴘʟᴀᴄᴇ ᴛʜᴇ ᴘʀᴏᴍᴏ ᴄᴏɴᴛᴇɴᴛ — ʙᴏᴛ ᴀsᴋs ғᴏʀ ᴀ ɴᴇᴡ ᴍᴇssᴀɢᴇ. ᴋᴇᴇᴘs ᴛʜᴇ sᴀᴍᴇ ɪᴅ, ᴛᴀʀɢᴇᴛ ᴀɴᴅ ɪɴᴛᴇʀᴠᴀʟ.</b> |
+| <code>/editpromo &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ʀᴇᴘʟᴀᴄᴇ <i>ʏᴏᴜʀ</i> ᴘʀᴏᴍᴏ ᴄᴏɴᴛᴇɴᴛ — ʙᴏᴛ ᴀsᴋs ғᴏʀ ᴀ ɴᴇᴡ ᴍᴇssᴀɢᴇ. ᴋᴇᴇᴘs ᴛʜᴇ sᴀᴍᴇ ɪᴅ, ᴛᴀʀɢᴇᴛ ᴀɴᴅ ɪɴᴛᴇʀᴠᴀʟ.</b> |
 | <code>/promopreview &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴄᴏᴘʏ ᴛʜᴇ sᴀᴠᴇᴅ ᴘʀᴏᴍᴏ ʙᴀᴄᴋ ɪɴᴛᴏ ʏᴏᴜʀ ᴅᴍ sᴏ ʏᴏᴜ ᴄᴀɴ sᴇᴇ ᴡʜᴀᴛ's sᴇᴛ</b> |
-| <code>/delpromo &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴅᴇʟᴇᴛᴇ ᴀ ᴘʀᴏᴍᴏ (ᴀʟsᴏ ᴄʟᴇᴀɴs ᴜᴘ ɪᴛs ʟᴀsᴛ ᴘᴏsᴛ)</b> |
-| <code>/promostatus [id]</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴅᴇᴛᴀɪʟs ғᴏʀ ᴏɴᴇ ᴘʀᴏᴍᴏ, ᴏʀ sᴜᴍᴍᴀʀʏ ᴏғ ᴀʟʟ</b> |
+| <code>/delpromo &lt;id&gt;</code> | <b>ᴏᴡɴᴇʀ</b> | <b>ᴅᴇʟᴇᴛᴇ <i>ʏᴏᴜʀ</i> ᴘʀᴏᴍᴏ (ᴀʟsᴏ ᴄʟᴇᴀɴs ᴜᴘ ɪᴛs ʟᴀsᴛ ᴘᴏsᴛ)</b> |
+| <code>/promostatus [id]</code> | <b>ᴀɴʏᴏɴᴇ</b> | <b>ᴅᴇᴛᴀɪʟs ғᴏʀ <i>ʏᴏᴜʀ</i> ᴘʀᴏᴍᴏ, ᴏʀ sᴜᴍᴍᴀʀʏ ᴏғ ᴀʟʟ ʏᴏᴜʀ ᴘʀᴏᴍᴏs</b> |
+
+> <b>"ᴏᴡɴᴇʀ"</b> ɪɴ ᴛʜᴇ ᴀʙᴏᴠᴇ ᴛᴀʙʟᴇ ᴍᴇᴀɴs <b>ᴛʜᴇ ᴘᴇʀsᴏɴ ᴡʜᴏ ᴄʀᴇᴀᴛᴇᴅ ᴛʜᴇ ᴘʀᴏᴍᴏ</b> — ɴᴏᴛ ᴛʜᴇ ʙᴏᴛ ᴏᴡɴᴇʀ. ᴇᴀᴄʜ ᴜsᴇʀ ᴄᴀɴ ᴏɴʟʏ ᴛᴏᴜᴄʜ ᴛʜᴇɪʀ ᴏᴡɴ ᴘʀᴏᴍᴏs.
 
 ### ɢᴇɴᴇʀᴀʟ / ᴏᴡɴᴇʀ
 
@@ -160,13 +176,24 @@
 ## ᴀᴜᴛᴏ-ᴘʀᴏᴍᴏ ғʟᴏᴡ
 
 1. <b>ᴀᴅᴅ ᴛʜᴇ ʙᴏᴛ ᴀs ᴀᴅᴍɪɴ ɪɴ ʏᴏᴜʀ ᴛᴀʀɢᴇᴛ ᴄʜᴀɴɴᴇʟ ᴡɪᴛʜ "ᴘᴏsᴛ ᴍᴇssᴀɢᴇs" + "ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs" ᴘᴇʀᴍɪssɪᴏɴs.</b>
-2. <b>ɪɴ ʙᴏᴛ ᴅᴍ, sᴇɴᴅ</b> <code>/setp &lt;chat_id&gt;</code> <b>(ᴏʀ <code>@username</code> ғᴏʀ ᴘᴜʙʟɪᴄ ᴄʜᴀɴɴᴇʟs).</b>
-3. <b>ʙᴏᴛ ʀᴇᴘʟɪᴇs ᴀsᴋɪɴɢ ʏᴏᴜ ᴛᴏ sᴇɴᴅ ᴛʜᴇ ᴘʀᴏᴍᴏ — sᴇɴᴅ ᴀɴʏᴛʜɪɴɢ:</b>
+2. <b>ᴍᴀᴋᴇ sᴜʀᴇ <i>ʏᴏᴜ</i> ᴀʀᴇ ᴀʟsᴏ ᴀɴ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴀᴛ ᴄʜᴀᴛ — ᴛʜᴇ ʙᴏᴛ ʀᴇғᴜsᴇs ᴛᴏ sᴄʜᴇᴅᴜʟᴇ ᴀ ᴘʀᴏᴍᴏ ɪғ ʏᴏᴜ ᴀʀᴇɴ'ᴛ.</b>
+3. <b>ɪɴ ʙᴏᴛ ᴅᴍ, ᴏᴘᴇɴ <code>/settings</code> ᴀɴᴅ ᴛᴀᴘ <code>➕ ɴᴇᴡ ᴘʀᴏᴍᴏ</code> — ᴏʀ sᴇɴᴅ</b> <code>/setp &lt;chat_id&gt;</code> <b>(ᴏʀ <code>@username</code> ғᴏʀ ᴘᴜʙʟɪᴄ ᴄʜᴀɴɴᴇʟs).</b>
+4. <b>ʙᴏᴛ ᴀsᴋs ғᴏʀ ᴛʜᴇ ᴘʀᴏᴍᴏ ᴄᴏɴᴛᴇɴᴛ — sᴇɴᴅ ᴀɴʏᴛʜɪɴɢ:</b>
    - <b>ᴘʟᴀɪɴ ᴛᴇxᴛ ᴡɪᴛʜ ʟɪɴᴋs / ʙᴏʟᴅ / ɪᴛᴀʟɪᴄ ᴇᴛᴄ.</b>
    - <b>ᴘʜᴏᴛᴏ + ᴄᴀᴘᴛɪᴏɴ</b>
    - <b>ᴠɪᴅᴇᴏ + ᴄᴀᴘᴛɪᴏɴ</b>
    - <b>ᴀᴜᴅɪᴏ / ᴠᴏɪᴄᴇ / ᴀɴɪᴍᴀᴛɪᴏɴ / sᴛɪᴄᴋᴇʀ / ᴅᴏᴄᴜᴍᴇɴᴛ — ᴀʟᴏɴᴇ ᴏʀ ᴡɪᴛʜ ᴄᴀᴘᴛɪᴏɴ</b>
-4. <b>ʙᴏᴛ ᴄᴏɴғɪʀᴍs ᴀɴᴅ ɢɪᴠᴇs ʏᴏᴜ ᴀ ᴘʀᴏᴍᴏ <code>ɪᴅ</code>. ɪɴᴛᴇʀᴠᴀʟ ᴅᴇғᴀᴜʟᴛs ᴛᴏ <code>20</code> ᴍɪɴᴜᴛᴇs ᴀɴᴅ ᴛʜᴇ ʟᴏᴏᴘ ɪs ᴇɴᴀʙʟᴇᴅ ɪᴍᴍᴇᴅɪᴀᴛᴇʟʏ.</b>
-5. <b>ᴜsᴇ</b> <code>/ptime &lt;id&gt; &lt;minutes&gt;</code> <b>ᴛᴏ ᴄʜᴀɴɢᴇ ᴛʜᴇ ɪɴᴛᴇʀᴠᴀʟ, ᴏʀ</b> <code>/promooff &lt;id&gt;</code> <b>ᴛᴏ ᴘᴀᴜsᴇ.</b>
+5. <b>ʙᴏᴛ ᴄᴏɴғɪʀᴍs ᴀɴᴅ ɢɪᴠᴇs ʏᴏᴜ ᴀ ᴘʀᴏᴍᴏ <code>ɪᴅ</code>. ɪɴᴛᴇʀᴠᴀʟ ᴅᴇғᴀᴜʟᴛs ᴛᴏ <code>20</code> ᴍɪɴᴜᴛᴇs ᴀɴᴅ ᴛʜᴇ ʟᴏᴏᴘ ɪs ᴇɴᴀʙʟᴇᴅ ɪᴍᴍᴇᴅɪᴀᴛᴇʟʏ.</b>
+6. <b>ᴜsᴇ</b> <code>/ptime &lt;id&gt; &lt;minutes&gt;</code> <b>ᴛᴏ ᴄʜᴀɴɢᴇ ᴛʜᴇ ɪɴᴛᴇʀᴠᴀʟ, ᴏʀ</b> <code>/promooff &lt;id&gt;</code> <b>ᴛᴏ ᴘᴀᴜsᴇ — ᴏʀ ᴊᴜsᴛ ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ɪɴ <code>/settings</code>.</b>
+
+<b>ᴇᴀᴄʜ ᴜsᴇʀ ᴄᴀɴ ʜᴀᴠᴇ ᴜᴘ ᴛᴏ <code>5</code> ᴘʀᴏᴍᴏs (ᴏᴡɴᴇʀ ɪs ᴇxᴇᴍᴘᴛ). ᴜsᴇʀs ᴏɴʟʏ sᴇᴇ / ᴇᴅɪᴛ / ᴅᴇʟᴇᴛᴇ ᴛʜᴇɪʀ ᴏᴡɴ ᴘʀᴏᴍᴏs.</b>
 
 <b>ᴀʟʟ ᴛᴇʟᴇɢʀᴀᴍ ғᴏʀᴍᴀᴛᴛɪɴɢ ɪs ᴘʀᴇsᴇʀᴠᴇᴅ — ᴄʟɪᴄᴋᴀʙʟᴇ ʟɪɴᴋs ɪɴsɪᴅᴇ ᴛᴇxᴛ, ʙᴏʟᴅ, ɪᴛᴀʟɪᴄ, sᴘᴏɪʟᴇʀs, ᴄᴏᴅᴇ ᴀɴᴅ ᴀɴʏ ᴏᴛʜᴇʀ ᴇɴᴛɪᴛɪᴇs ᴀʀᴇ ᴋᴇᴘᴛ ᴇxᴀᴄᴛʟʏ ᴀs ʏᴏᴜ ᴛʏᴘᴇᴅ ᴛʜᴇᴍ.</b>
+
+## sᴇᴛᴛɪɴɢs ᴘᴀɴᴇʟ ғʟᴏᴡ
+
+1. <b>ɪɴ ʙᴏᴛ ᴅᴍ, sᴇɴᴅ</b> <code>/settings</code> <b>(ᴏʀ ᴛᴀᴘ <code>⚙ sᴇᴛᴛɪɴɢs</code> ᴏɴ <code>/start</code>).</b>
+2. <b>ᴀ ᴘʜᴏᴛᴏ ᴍᴇssᴀɢᴇ ᴀᴘᴘᴇᴀʀs ᴡɪᴛʜ ʏᴏᴜʀ ᴄᴜʀʀᴇɴᴛ ᴀᴜᴛᴏ-ᴘʀᴏᴍᴏ + ғᴏʀᴡᴀʀᴅ + ʟᴏɢɪɴ sᴛᴀᴛᴜs, ᴘʟᴜs ʙᴜᴛᴛᴏɴs.</b>
+3. <b>ᴛᴀᴘ ᴀɴʏ ʙᴜᴛᴛᴏɴ — ᴛʜᴇ <i>sᴀᴍᴇ ᴍᴇssᴀɢᴇ</i> ᴇᴅɪᴛs ᴛᴏ ᴛʜᴇ ɴᴇxᴛ sᴄʀᴇᴇɴ ᴏʀ ᴀ ᴘʀᴏᴍᴘᴛ.</b>
+4. <b>ᴡʜᴇɴ ᴀ ᴘʀᴏᴍᴘᴛ ᴀsᴋs ғᴏʀ ᴀ ᴠᴀʟᴜᴇ (ᴄʜᴀᴛ, ᴍɪɴᴜᴛᴇs, ᴄᴏɴᴛᴇɴᴛ), ᴊᴜsᴛ sᴇɴᴅ ɪᴛ ɪɴ ᴛʜᴇ ᴄʜᴀᴛ — ᴛʜᴇ ʙᴏᴛ ᴄᴏɴsᴜᴍᴇs ᴀɴᴅ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇs ɪᴛ (ʙᴇsᴛ-ᴇғғᴏʀᴛ).</b>
+5. <b>ᴜsᴇ <code>✖ ᴄᴀɴᴄᴇʟ</code> ᴛᴏ ᴀʙᴏʀᴛ ᴀ ᴘʀᴏᴍᴘᴛ, ᴏʀ <code>❌ ᴄʟᴏsᴇ</code> ᴛᴏ ᴅɪsᴍɪss ᴛʜᴇ ᴘᴀɴᴇʟ.</b>
