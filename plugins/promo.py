@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from datetime import datetime
 
 from pyrogram import Client, filters, enums
 from pyrogram.errors import FloodWait, ChannelPrivate, ChatWriteForbidden, RPCError
@@ -17,14 +18,13 @@ log = logging.getLogger("miko.promo")
 # ------------------------------------------------------------------
 # In-memory state
 # ------------------------------------------------------------------
-# user_id -> {"target_chat": <int|str>, "chat_msg_id": <int>}
-# When a user runs /setp, we ask them to send the promo as the next message.
+# user_id -> {"target_chat": ..., "target_title": ..., "edit_promo_id": <int|None>}
+# Only set during a /setp or /editpromo flow.
 promo_set_state: dict[int, dict] = {}
 
-# promo_id -> asyncio.Task   (running promo loop)
+# promo_id -> asyncio.Task (running promo loop)
 _running_tasks: dict[int, asyncio.Task] = {}
 
-# Lock so only one scheduler-bootstrap runs
 _scheduler_started = False
 _scheduler_lock = asyncio.Lock()
 
@@ -49,8 +49,6 @@ def _parse_chat(arg: str):
 
 
 def _fmt_target(target) -> str:
-    if isinstance(target, int):
-        return str(target)
     return str(target)
 
 
@@ -65,29 +63,20 @@ async def _owner_only(message: Message) -> bool:
 
 
 # ------------------------------------------------------------------
-# Promo loop (per promo)
+# Posting helpers
 # ------------------------------------------------------------------
 async def _post_once(bot: Client, promo: dict) -> int | None:
-    """Copy the stored promo message into the target chat. Returns new msg id."""
     target = promo["target_chat"]
     src_chat = promo["source_chat_id"]
     src_msg = promo["source_msg_id"]
     try:
-        sent = await bot.copy_message(
-            chat_id=target,
-            from_chat_id=src_chat,
-            message_id=src_msg,
-        )
+        sent = await bot.copy_message(target, src_chat, src_msg)
         return sent.id
     except FloodWait as e:
         log.warning(f"promo {promo['_id']} FloodWait {e.value}s on post")
         await asyncio.sleep(e.value + 1)
         try:
-            sent = await bot.copy_message(
-                chat_id=target,
-                from_chat_id=src_chat,
-                message_id=src_msg,
-            )
+            sent = await bot.copy_message(target, src_chat, src_msg)
             return sent.id
         except Exception as ee:
             log.error(f"promo {promo['_id']} retry post failed: {ee}")
@@ -119,45 +108,47 @@ async def _delete_previous(bot: Client, promo: dict):
         log.info(f"promo {promo['_id']} delete prev {last_id} skipped: {e}")
 
 
+async def _post_cycle(bot: Client, promo_id: int) -> int | None:
+    """Delete previous + post new + persist last_post_id. Returns new id or None."""
+    promo = await db.get_promo(promo_id)
+    if not promo:
+        return None
+    await _delete_previous(bot, promo)
+    new_id = await _post_once(bot, promo)
+    if new_id:
+        await db.update_promo(
+            promo_id,
+            last_post_id=new_id,
+            last_post_at=datetime.utcnow(),
+        )
+    return new_id
+
+
+# ------------------------------------------------------------------
+# Loop (per promo)
+# ------------------------------------------------------------------
 async def _promo_loop(bot: Client, promo_id: int):
-    """One running task per enabled promo."""
     log.info(f"[promo:{promo_id}] loop started")
     try:
-        # Initial post immediately when started
+        # Initial cycle: also deletes a previous post if there is one — this
+        # prevents stale posts from piling up when the loop is restarted
+        # (e.g. after /ptime, /editpromo, or a bot restart).
         promo = await db.get_promo(promo_id)
         if not promo or not promo.get("enabled"):
-            log.info(f"[promo:{promo_id}] not enabled — exiting")
             return
-
-        new_id = await _post_once(bot, promo)
-        if new_id:
-            await db.update_promo(
-                promo_id,
-                last_post_id=new_id,
-                last_post_at=__import__("datetime").datetime.utcnow(),
-            )
+        await _post_cycle(bot, promo_id)
 
         while True:
             promo = await db.get_promo(promo_id)
             if not promo or not promo.get("enabled"):
-                log.info(f"[promo:{promo_id}] disabled / removed — exiting")
                 return
-
             interval = max(1, int(promo.get("interval_minutes", 20)))
             await asyncio.sleep(interval * 60)
 
             promo = await db.get_promo(promo_id)
             if not promo or not promo.get("enabled"):
                 return
-
-            await _delete_previous(bot, promo)
-            new_id = await _post_once(bot, promo)
-            if new_id:
-                await db.update_promo(
-                    promo_id,
-                    last_post_id=new_id,
-                    last_post_at=__import__("datetime").datetime.utcnow(),
-                )
+            await _post_cycle(bot, promo_id)
     except asyncio.CancelledError:
         log.info(f"[promo:{promo_id}] loop cancelled")
         raise
@@ -180,7 +171,7 @@ def _kill_task(promo_id: int):
 
 
 # ------------------------------------------------------------------
-# Startup hook (called from miko.py after the bot starts)
+# Startup hook
 # ------------------------------------------------------------------
 async def start_promo_scheduler(bot: Client):
     global _scheduler_started
@@ -197,7 +188,39 @@ async def start_promo_scheduler(bot: Client):
 
 
 # ------------------------------------------------------------------
-# /setp <chat>  → ask user to send the promo content
+# Target validation
+# ------------------------------------------------------------------
+async def _validate_target(bot: Client, target):
+    """Returns (chat, error_msg_or_None)."""
+    try:
+        chat = await bot.get_chat(target)
+    except Exception as e:
+        return None, f"<b>ᴄᴀɴɴᴏᴛ ᴀᴄᴄᴇss ᴛʜᴀᴛ ᴄʜᴀᴛ:</b> <code>{e}</code>"
+
+    try:
+        me = await bot.get_me()
+        member = await bot.get_chat_member(chat.id, me.id)
+        if member.status not in (
+            enums.ChatMemberStatus.ADMINISTRATOR,
+            enums.ChatMemberStatus.OWNER,
+        ):
+            return None, (
+                "<b>ɪ ᴀᴍ ɴᴏᴛ ᴀɴ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴀᴛ ᴄʜᴀᴛ.</b>\n"
+                "<b>ᴀᴅᴅ ᴍᴇ ᴀs ᴀᴅᴍɪɴ ᴡɪᴛʜ \"ᴘᴏsᴛ ᴍᴇssᴀɢᴇs\" ᴀɴᴅ \"ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs\" ᴘᴇʀᴍɪssɪᴏɴs.</b>"
+            )
+        if chat.type == enums.ChatType.CHANNEL and getattr(member, "privileges", None):
+            if not member.privileges.can_post_messages:
+                return None, "<b>ɪ ʟᴀᴄᴋ ᴛʜᴇ \"ᴘᴏsᴛ ᴍᴇssᴀɢᴇs\" ᴀᴅᴍɪɴ ᴘᴇʀᴍɪssɪᴏɴ.</b>"
+            if not member.privileges.can_delete_messages:
+                return None, "<b>ɪ ʟᴀᴄᴋ ᴛʜᴇ \"ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs\" ᴀᴅᴍɪɴ ᴘᴇʀᴍɪssɪᴏɴ.</b>"
+    except Exception as e:
+        log.info(f"could not check admin perms in {chat.id}: {e}")
+        # Don't fail outright — the post attempt itself will surface the issue.
+    return chat, None
+
+
+# ------------------------------------------------------------------
+# /setp <chat>
 # ------------------------------------------------------------------
 @Client.on_message(filters.command("setp") & filters.private)
 async def setp_cmd(bot: Client, message: Message):
@@ -212,55 +235,84 @@ async def setp_cmd(bot: Client, message: Message):
         )
 
     target = _parse_chat(" ".join(message.command[1:]))
-
-    # Verify the bot can actually access the target
-    try:
-        chat = await bot.get_chat(target)
-        target_resolved = chat.id
-        target_title = getattr(chat, "title", None) or str(target)
-    except Exception as e:
-        return await message.reply_text(
-            f"<b>ᴄᴀɴɴᴏᴛ ᴀᴄᴄᴇss ᴛʜᴀᴛ ᴄʜᴀᴛ:</b> <code>{e}</code>\n"
-            "<b>ᴀᴅᴅ ᴛʜᴇ ʙᴏᴛ ᴀs ᴀᴅᴍɪɴ ᴡɪᴛʜ \"ᴘᴏsᴛ ᴍᴇssᴀɢᴇs\" ᴀɴᴅ \"ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs\" ᴘᴇʀᴍɪssɪᴏɴ.</b>",
-            parse_mode=HTML,
-        )
+    chat, err = await _validate_target(bot, target)
+    if err:
+        return await message.reply_text(err, parse_mode=HTML)
 
     promo_set_state[message.from_user.id] = {
-        "target_chat": target_resolved,
-        "target_title": target_title,
+        "target_chat": chat.id,
+        "target_title": getattr(chat, "title", None) or str(target),
+        "edit_promo_id": None,
     }
 
     await message.reply_text(
-        f"<b>ᴛᴀʀɢᴇᴛ:</b> <code>{target_title}</code> (<code>{target_resolved}</code>)\n\n"
-        "<b>ɴᴏᴡ sᴇɴᴅ ᴛʜᴇ ᴘʀᴏᴍᴏ ᴍᴇssᴀɢᴇ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ᴘᴏsᴛ.</b>\n\n"
-        "<b>ᴀʟʟᴏᴡᴇᴅ:</b>\n"
-        "• <b>ᴘʟᴀɪɴ ᴛᴇxᴛ</b> (ɪɴᴄʟᴜᴅɪɴɢ ʟɪɴᴋs, ʙᴏʟᴅ, ɪᴛᴀʟɪᴄ ᴇᴛᴄ — ᴀʟʟ ғᴏʀᴍᴀᴛᴛɪɴɢ ɪs ᴋᴇᴘᴛ)\n"
-        "• <b>ᴘʜᴏᴛᴏ / ᴠɪᴅᴇᴏ / ᴀᴜᴅɪᴏ / ᴠᴏɪᴄᴇ / ᴀɴɪᴍᴀᴛɪᴏɴ / sᴛɪᴄᴋᴇʀ / ᴅᴏᴄᴜᴍᴇɴᴛ</b>\n"
-        "• <b>ᴀɴʏ ᴄᴏᴍʙᴏ — ᴍᴇᴅɪᴀ + ᴄᴀᴘᴛɪᴏɴ ᴡɪᴛʜ ʟɪɴᴋs / ʙᴏʟᴅ ᴇᴛᴄ.</b>\n\n"
+        f"<b>ᴛᴀʀɢᴇᴛ:</b> <code>{chat.title}</code> (<code>{chat.id}</code>)\n\n"
+        "<b>ɴᴏᴡ sᴇɴᴅ ᴛʜᴇ ᴘʀᴏᴍᴏ ᴍᴇssᴀɢᴇ.</b>\n\n"
+        "<b>ᴀʟʟᴏᴡᴇᴅ:</b> ᴘʟᴀɪɴ ᴛᴇxᴛ, ᴘʜᴏᴛᴏ, ᴠɪᴅᴇᴏ, ᴀᴜᴅɪᴏ, ᴠᴏɪᴄᴇ, ᴀɴɪᴍᴀᴛɪᴏɴ, sᴛɪᴄᴋᴇʀ, ᴅᴏᴄᴜᴍᴇɴᴛ, ᴏʀ ᴀɴʏ ᴄᴏᴍʙᴏ + ᴄᴀᴘᴛɪᴏɴ. <b>ᴀʟʟ ғᴏʀᴍᴀᴛᴛɪɴɢ (ʟɪɴᴋs, ʙᴏʟᴅ, ɪᴛᴀʟɪᴄ ᴇᴛᴄ.) ɪs ᴋᴇᴘᴛ.</b>\n\n"
         "<b>sᴇɴᴅ /cancelp ᴛᴏ ᴀʙᴏʀᴛ.</b>",
         parse_mode=HTML,
     )
 
 
+# ------------------------------------------------------------------
+# /editpromo <id>
+# ------------------------------------------------------------------
+@Client.on_message(filters.command("editpromo") & filters.private)
+async def editpromo_cmd(bot: Client, message: Message):
+    if not await _owner_only(message):
+        return
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "<b>ᴜsᴀɢᴇ:</b> <code>/editpromo &lt;promo_id&gt;</code>",
+            parse_mode=HTML,
+        )
+    try:
+        promo_id = int(message.command[1])
+    except ValueError:
+        return await message.reply_text("<b>ɪᴅ ᴍᴜsᴛ ʙᴇ ᴀɴ ɪɴᴛᴇɢᴇʀ.</b>", parse_mode=HTML)
+
+    promo = await db.get_promo(promo_id)
+    if not promo:
+        return await message.reply_text(
+            f"<b>ɴᴏ ᴘʀᴏᴍᴏ ᴡɪᴛʜ ɪᴅ</b> <code>{promo_id}</code><b>.</b>",
+            parse_mode=HTML,
+        )
+
+    promo_set_state[message.from_user.id] = {
+        "target_chat": promo["target_chat"],
+        "target_title": str(promo["target_chat"]),
+        "edit_promo_id": promo_id,
+    }
+    await message.reply_text(
+        f"<b>ᴇᴅɪᴛɪɴɢ ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code><b>.</b>\n"
+        "<b>ɴᴏᴡ sᴇɴᴅ ᴛʜᴇ ɴᴇᴡ ᴘʀᴏᴍᴏ ᴄᴏɴᴛᴇɴᴛ — ᴀɴʏ ᴛᴇxᴛ / ᴍᴇᴅɪᴀ / ᴄᴏᴍʙᴏ.</b>\n"
+        "<b>sᴇɴᴅ /cancelp ᴛᴏ ᴀʙᴏʀᴛ.</b>",
+        parse_mode=HTML,
+    )
+
+
+# ------------------------------------------------------------------
+# /cancelp
+# ------------------------------------------------------------------
 @Client.on_message(filters.command("cancelp") & filters.private)
 async def cancelp_cmd(bot: Client, message: Message):
     if not await _owner_only(message):
         return
     state = promo_set_state.pop(message.from_user.id, None)
     if state:
-        await message.reply_text("<b>ᴘʀᴏᴍᴏ sᴇᴛᴜᴘ ᴄᴀɴᴄᴇʟʟᴇᴅ.</b>", parse_mode=HTML)
+        await message.reply_text("<b>ᴄᴀɴᴄᴇʟʟᴇᴅ.</b>", parse_mode=HTML)
     else:
         await message.reply_text("<b>ɴᴏᴛʜɪɴɢ ᴛᴏ ᴄᴀɴᴄᴇʟ.</b>", parse_mode=HTML)
 
 
-# Capture the next non-command message from a user who ran /setp.
-# Group = -1 so it runs BEFORE other private-message handlers (like login_flow).
+# ------------------------------------------------------------------
+# Capture next non-command message during /setp or /editpromo
+# ------------------------------------------------------------------
 async def _promo_capture_filter(_, __, message: Message) -> bool:
     if not message.from_user:
         return False
     if message.from_user.id not in promo_set_state:
         return False
-    # Ignore pure /commands so the user can still call /cancelp etc.
     if message.text and message.text.startswith("/"):
         return False
     return True
@@ -276,14 +328,29 @@ async def capture_promo_message(bot: Client, message: Message):
     if not state:
         return
 
-    target_chat = state["target_chat"]
-    target_title = state.get("target_title") or str(target_chat)
-
-    # We store the message_id from the user's DM with the bot.
-    # Telegram preserves all entities (links, bold, italic, etc.) and media
-    # automatically when we later use bot.copy_message(...).
     src_chat_id = message.chat.id
     src_msg_id = message.id
+    edit_id = state.get("edit_promo_id")
+
+    # ---- Edit flow: replace existing promo's source ----
+    if edit_id:
+        await db.update_promo(
+            edit_id,
+            source_chat_id=src_chat_id,
+            source_msg_id=src_msg_id,
+        )
+        promo = await db.get_promo(edit_id)
+        if promo and promo.get("enabled"):
+            # Restart loop so the new content is posted right away.
+            _spawn_task(bot, edit_id)
+        return await message.reply_text(
+            f"<b>✅ ᴘʀᴏᴍᴏ</b> <code>{edit_id}</code> <b>ᴜᴘᴅᴀᴛᴇᴅ.</b>",
+            parse_mode=HTML,
+        )
+
+    # ---- Create flow ----
+    target_chat = state["target_chat"]
+    target_title = state.get("target_title") or str(target_chat)
 
     promo_id = await db.add_promo(
         owner_id=user_id,
@@ -292,8 +359,6 @@ async def capture_promo_message(bot: Client, message: Message):
         source_msg_id=src_msg_id,
         interval_minutes=20,
     )
-
-    # Start the loop right away (default enabled=True).
     _spawn_task(bot, promo_id)
 
     await message.reply_text(
@@ -302,25 +367,20 @@ async def capture_promo_message(bot: Client, message: Message):
         f"<b>ᴛᴀʀɢᴇᴛ:</b> <code>{target_title}</code> (<code>{target_chat}</code>)\n"
         f"<b>ɪɴᴛᴇʀᴠᴀʟ:</b> <code>20</code> <b>ᴍɪɴᴜᴛᴇs</b> (ᴅᴇғᴀᴜʟᴛ)\n"
         f"<b>sᴛᴀᴛᴜs:</b> <code>ᴏɴ</code>\n\n"
-        "<b>ᴄᴏᴍᴍᴀɴᴅs ғᴏʀ ᴛʜɪs ᴘʀᴏᴍᴏ:</b>\n"
-        f"<code>/ptime {promo_id} &lt;minutes&gt;</code> — ᴄʜᴀɴɢᴇ ɪɴᴛᴇʀᴠᴀʟ\n"
-        f"<code>/promooff {promo_id}</code> — ᴘᴀᴜsᴇ\n"
-        f"<code>/promoon {promo_id}</code> — ʀᴇsᴜᴍᴇ\n"
-        f"<code>/promostatus {promo_id}</code> — ᴅᴇᴛᴀɪʟs\n"
-        f"<code>/delpromo {promo_id}</code> — ᴅᴇʟᴇᴛᴇ\n"
-        "<code>/list</code> — ᴀʟʟ ᴘʀᴏᴍᴏs",
+        f"<code>/ptime {promo_id} &lt;min&gt;</code>  <code>/promooff {promo_id}</code>  <code>/promoon {promo_id}</code>\n"
+        f"<code>/promonow {promo_id}</code>  <code>/editpromo {promo_id}</code>  <code>/promopreview {promo_id}</code>\n"
+        f"<code>/promostatus {promo_id}</code>  <code>/delpromo {promo_id}</code>  <code>/list</code>",
         parse_mode=HTML,
     )
 
 
 # ------------------------------------------------------------------
-# /list  → list all promos
+# /list, /listp
 # ------------------------------------------------------------------
-@Client.on_message(filters.command("list") & filters.private)
+@Client.on_message(filters.command(["list", "listp"]) & filters.private)
 async def list_cmd(bot: Client, message: Message):
     if not await _owner_only(message):
         return
-
     lines = ["<b>ᴀʟʟ ᴘʀᴏᴍᴏs:</b>", ""]
     n = 0
     async for p in db.all_promos():
@@ -332,28 +392,23 @@ async def list_cmd(bot: Client, message: Message):
             f"<b>ᴇᴠᴇʀʏ</b> <code>{p.get('interval_minutes', 20)}</code> <b>ᴍɪɴ</b> — "
             f"<b>{state}</b>"
         )
-
     if n == 0:
         lines.append("<b>ɴᴏ ᴘʀᴏᴍᴏs ʏᴇᴛ. ᴜsᴇ /setp ᴛᴏ ᴄʀᴇᴀᴛᴇ ᴏɴᴇ.</b>")
-
     await message.reply_text("\n".join(lines), parse_mode=HTML)
 
 
 # ------------------------------------------------------------------
-# /ptime <id> <minutes>
+# /ptime <id> <min>
 # ------------------------------------------------------------------
 @Client.on_message(filters.command("ptime") & filters.private)
 async def ptime_cmd(bot: Client, message: Message):
     if not await _owner_only(message):
         return
-
     if len(message.command) < 3:
         return await message.reply_text(
-            "<b>ᴜsᴀɢᴇ:</b> <code>/ptime &lt;promo_id&gt; &lt;minutes&gt;</code>\n"
-            "<b>ᴇxᴀᴍᴘʟᴇ:</b> <code>/ptime 1 30</code>",
+            "<b>ᴜsᴀɢᴇ:</b> <code>/ptime &lt;promo_id&gt; &lt;minutes&gt;</code>",
             parse_mode=HTML,
         )
-
     try:
         promo_id = int(message.command[1])
         minutes = int(message.command[2])
@@ -362,12 +417,8 @@ async def ptime_cmd(bot: Client, message: Message):
             "<b>ɪᴅ ᴀɴᴅ ᴍɪɴᴜᴛᴇs ᴍᴜsᴛ ʙᴇ ɪɴᴛᴇɢᴇʀs.</b>",
             parse_mode=HTML,
         )
-
     if minutes < 1:
-        return await message.reply_text(
-            "<b>ᴍɪɴᴜᴛᴇs ᴍᴜsᴛ ʙᴇ ᴀᴛ ʟᴇᴀsᴛ 1.</b>",
-            parse_mode=HTML,
-        )
+        return await message.reply_text("<b>ᴍɪɴᴜᴛᴇs ᴍᴜsᴛ ʙᴇ ᴀᴛ ʟᴇᴀsᴛ 1.</b>", parse_mode=HTML)
 
     promo = await db.get_promo(promo_id)
     if not promo:
@@ -377,11 +428,8 @@ async def ptime_cmd(bot: Client, message: Message):
         )
 
     await db.update_promo(promo_id, interval_minutes=minutes)
-
-    # Restart the loop so the new interval kicks in immediately.
     if promo.get("enabled"):
         _spawn_task(bot, promo_id)
-
     await message.reply_text(
         f"<b>ɪɴᴛᴇʀᴠᴀʟ ғᴏʀ ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code> "
         f"<b>sᴇᴛ ᴛᴏ</b> <code>{minutes}</code> <b>ᴍɪɴᴜᴛᴇs.</b>",
@@ -390,34 +438,29 @@ async def ptime_cmd(bot: Client, message: Message):
 
 
 # ------------------------------------------------------------------
-# /promoon <id>  /promooff <id>
+# /promoon /promooff
 # ------------------------------------------------------------------
 @Client.on_message(filters.command("promoon") & filters.private)
 async def promoon_cmd(bot: Client, message: Message):
     if not await _owner_only(message):
         return
-
     if len(message.command) < 2:
         return await message.reply_text(
             "<b>ᴜsᴀɢᴇ:</b> <code>/promoon &lt;promo_id&gt;</code>",
             parse_mode=HTML,
         )
-
     try:
         promo_id = int(message.command[1])
     except ValueError:
         return await message.reply_text("<b>ɪᴅ ᴍᴜsᴛ ʙᴇ ᴀɴ ɪɴᴛᴇɢᴇʀ.</b>", parse_mode=HTML)
-
     promo = await db.get_promo(promo_id)
     if not promo:
         return await message.reply_text(
             f"<b>ɴᴏ ᴘʀᴏᴍᴏ ᴡɪᴛʜ ɪᴅ</b> <code>{promo_id}</code><b>.</b>",
             parse_mode=HTML,
         )
-
     await db.update_promo(promo_id, enabled=True)
     _spawn_task(bot, promo_id)
-
     await message.reply_text(
         f"<b>ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code> <b>ɪs ɴᴏᴡ ᴏɴ.</b>",
         parse_mode=HTML,
@@ -428,13 +471,41 @@ async def promoon_cmd(bot: Client, message: Message):
 async def promooff_cmd(bot: Client, message: Message):
     if not await _owner_only(message):
         return
-
     if len(message.command) < 2:
         return await message.reply_text(
             "<b>ᴜsᴀɢᴇ:</b> <code>/promooff &lt;promo_id&gt;</code>",
             parse_mode=HTML,
         )
+    try:
+        promo_id = int(message.command[1])
+    except ValueError:
+        return await message.reply_text("<b>ɪᴅ ᴍᴜsᴛ ʙᴇ ᴀɴ ɪɴᴛᴇɢᴇʀ.</b>", parse_mode=HTML)
+    promo = await db.get_promo(promo_id)
+    if not promo:
+        return await message.reply_text(
+            f"<b>ɴᴏ ᴘʀᴏᴍᴏ ᴡɪᴛʜ ɪᴅ</b> <code>{promo_id}</code><b>.</b>",
+            parse_mode=HTML,
+        )
+    await db.update_promo(promo_id, enabled=False)
+    _kill_task(promo_id)
+    await message.reply_text(
+        f"<b>ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code> <b>ɪs ɴᴏᴡ ᴏғғ.</b>",
+        parse_mode=HTML,
+    )
 
+
+# ------------------------------------------------------------------
+# /promonow <id>  — fire one cycle right now
+# ------------------------------------------------------------------
+@Client.on_message(filters.command("promonow") & filters.private)
+async def promonow_cmd(bot: Client, message: Message):
+    if not await _owner_only(message):
+        return
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "<b>ᴜsᴀɢᴇ:</b> <code>/promonow &lt;promo_id&gt;</code>",
+            parse_mode=HTML,
+        )
     try:
         promo_id = int(message.command[1])
     except ValueError:
@@ -447,13 +518,62 @@ async def promooff_cmd(bot: Client, message: Message):
             parse_mode=HTML,
         )
 
-    await db.update_promo(promo_id, enabled=False)
-    _kill_task(promo_id)
+    new_id = await _post_cycle(bot, promo_id)
+    if new_id:
+        await message.reply_text(
+            f"<b>✅ ᴘᴏsᴛᴇᴅ ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code> "
+            f"<b>(ᴍsɢ ɪᴅ</b> <code>{new_id}</code><b>).</b>",
+            parse_mode=HTML,
+        )
+    else:
+        await message.reply_text(
+            f"<b>❌ ᴄᴏᴜʟᴅ ɴᴏᴛ ᴘᴏsᴛ ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code><b>. "
+            "ᴄʜᴇᴄᴋ ʙᴏᴛ ᴀᴅᴍɪɴ ᴘᴇʀᴍɪssɪᴏɴs ᴀɴᴅ sᴇʀᴠᴇʀ ʟᴏɢs.</b>",
+            parse_mode=HTML,
+        )
+
+
+# ------------------------------------------------------------------
+# /promopreview <id>  — DM the saved promo back to owner
+# ------------------------------------------------------------------
+@Client.on_message(filters.command("promopreview") & filters.private)
+async def promopreview_cmd(bot: Client, message: Message):
+    if not await _owner_only(message):
+        return
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "<b>ᴜsᴀɢᴇ:</b> <code>/promopreview &lt;promo_id&gt;</code>",
+            parse_mode=HTML,
+        )
+    try:
+        promo_id = int(message.command[1])
+    except ValueError:
+        return await message.reply_text("<b>ɪᴅ ᴍᴜsᴛ ʙᴇ ᴀɴ ɪɴᴛᴇɢᴇʀ.</b>", parse_mode=HTML)
+
+    promo = await db.get_promo(promo_id)
+    if not promo:
+        return await message.reply_text(
+            f"<b>ɴᴏ ᴘʀᴏᴍᴏ ᴡɪᴛʜ ɪᴅ</b> <code>{promo_id}</code><b>.</b>",
+            parse_mode=HTML,
+        )
 
     await message.reply_text(
-        f"<b>ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code> <b>ɪs ɴᴏᴡ ᴏғғ.</b>",
+        f"<b>ᴘʀᴇᴠɪᴇᴡ ᴏғ ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code><b>:</b>",
         parse_mode=HTML,
     )
+    try:
+        await bot.copy_message(
+            chat_id=message.chat.id,
+            from_chat_id=promo["source_chat_id"],
+            message_id=promo["source_msg_id"],
+        )
+    except Exception as e:
+        await message.reply_text(
+            f"<b>❌ ᴄᴏᴜʟᴅ ɴᴏᴛ ʟᴏᴀᴅ ᴘʀᴏᴍᴏ ᴄᴏɴᴛᴇɴᴛ:</b> <code>{e}</code>\n"
+            "<b>ᴛʜᴇ sᴏᴜʀᴄᴇ ᴍᴇssᴀɢᴇ ᴍᴀʏ ʜᴀᴠᴇ ʙᴇᴇɴ ᴅᴇʟᴇᴛᴇᴅ. ᴜsᴇ /editpromo "
+            f"{promo_id} ᴛᴏ ʀᴇsᴇᴛ ɪᴛ.</b>",
+            parse_mode=HTML,
+        )
 
 
 # ------------------------------------------------------------------
@@ -463,37 +583,29 @@ async def promooff_cmd(bot: Client, message: Message):
 async def delpromo_cmd(bot: Client, message: Message):
     if not await _owner_only(message):
         return
-
     if len(message.command) < 2:
         return await message.reply_text(
             "<b>ᴜsᴀɢᴇ:</b> <code>/delpromo &lt;promo_id&gt;</code>",
             parse_mode=HTML,
         )
-
     try:
         promo_id = int(message.command[1])
     except ValueError:
         return await message.reply_text("<b>ɪᴅ ᴍᴜsᴛ ʙᴇ ᴀɴ ɪɴᴛᴇɢᴇʀ.</b>", parse_mode=HTML)
-
     promo = await db.get_promo(promo_id)
     if not promo:
         return await message.reply_text(
             f"<b>ɴᴏ ᴘʀᴏᴍᴏ ᴡɪᴛʜ ɪᴅ</b> <code>{promo_id}</code><b>.</b>",
             parse_mode=HTML,
         )
-
     _kill_task(promo_id)
-
-    # Also try to clean up the last posted message if any.
     last_id = promo.get("last_post_id")
     if last_id:
         try:
             await bot.delete_messages(promo["target_chat"], last_id)
         except Exception:
             pass
-
     await db.delete_promo(promo_id)
-
     await message.reply_text(
         f"<b>ᴘʀᴏᴍᴏ</b> <code>{promo_id}</code> <b>ᴅᴇʟᴇᴛᴇᴅ.</b>",
         parse_mode=HTML,
@@ -509,7 +621,6 @@ async def promostatus_cmd(bot: Client, message: Message):
         return
 
     if len(message.command) < 2:
-        # Summary mode: show all
         lines = ["<b>ᴘʀᴏᴍᴏ sᴛᴀᴛᴜs (ᴀʟʟ):</b>", ""]
         n = 0
         async for p in db.all_promos():
