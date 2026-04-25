@@ -234,9 +234,6 @@ async def approve_cmd(bot: Client, message: Message):
                     except Exception:
                         pass
                     last_edit = now
-
-        # Total failures = everything we didn't approve.
-        failed = skipped_full + declined + other_failed
         except ChatAdminRequired:
             return await status.edit_text(
                 "<b>ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴀɴ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴀᴛ ᴄʜᴀᴛ "
@@ -245,6 +242,9 @@ async def approve_cmd(bot: Client, message: Message):
             )
         except Exception as e:
             log.warning(f"enumerate pending failed for {chat_id}: {e}")
+
+        # Total failures = everything we didn't approve.
+        failed = skipped_full + declined + other_failed
 
         # Counters
         if approved > 0:
