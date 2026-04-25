@@ -30,6 +30,7 @@ from plugins.promo import (
     _spawn_task,
     _kill_task,
     _is_running,
+    _extract_content,
 )
 
 
@@ -852,12 +853,27 @@ async def _handle_promo_content(bot: Client, user_id: int, message: Message):
         )
         return
 
+    # Snapshot the message content so the promo keeps working even if
+    # the user later deletes this DM message.
+    content = _extract_content(message)
+    if not content:
+        await _prompt(
+            bot, user_id,
+            "<b>❌ ᴜɴsᴜᴘᴘᴏʀᴛᴇᴅ ᴄᴏɴᴛᴇɴᴛ.</b>\n\n"
+            "<b>sᴇɴᴅ ᴛᴇxᴛ, ᴘʜᴏᴛᴏ, ᴠɪᴅᴇᴏ, ᴀᴜᴅɪᴏ, ᴠᴏɪᴄᴇ, ᴀɴɪᴍᴀᴛɪᴏɴ, "
+            "sᴛɪᴄᴋᴇʀ, ᴠɪᴅᴇᴏ ɴᴏᴛᴇ ᴏʀ ᴅᴏᴄᴜᴍᴇɴᴛ.</b>",
+            awaiting="promo_content",
+            ctx={"target_chat": target_chat, "target_title": target_title},
+        )
+        return
+
     promo_id = await db.add_promo(
         owner_id=user_id,
         target_chat=target_chat,
         source_chat_id=message.chat.id,
         source_msg_id=message.id,
         interval_minutes=20,
+        content=content,
     )
     _spawn_task(bot, promo_id)
     await _render_promo_detail(
@@ -898,10 +914,25 @@ async def _handle_promo_edit(bot: Client, user_id: int, promo_id: int,
     if err:
         await _edit_panel(bot, user_id, err, _back_kb())
         return
+
+    # Snapshot the new content so the promo keeps working even if this
+    # DM message is later deleted.
+    content = _extract_content(message)
+    if not content:
+        await _prompt(
+            bot, user_id,
+            "<b>❌ ᴜɴsᴜᴘᴘᴏʀᴛᴇᴅ ᴄᴏɴᴛᴇɴᴛ.</b>\n\n"
+            "<b>sᴇɴᴅ ᴛᴇxᴛ, ᴘʜᴏᴛᴏ, ᴠɪᴅᴇᴏ, ᴀᴜᴅɪᴏ, ᴠᴏɪᴄᴇ, ᴀɴɪᴍᴀᴛɪᴏɴ, "
+            "sᴛɪᴄᴋᴇʀ, ᴠɪᴅᴇᴏ ɴᴏᴛᴇ ᴏʀ ᴅᴏᴄᴜᴍᴇɴᴛ.</b>",
+            awaiting=f"promo_edit:{promo_id}",
+        )
+        return
+
     await db.update_promo(
         promo_id,
         source_chat_id=message.chat.id,
         source_msg_id=message.id,
+        content=content,
     )
     if p.get("enabled"):
         _spawn_task(bot, promo_id)

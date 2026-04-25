@@ -107,10 +107,36 @@ async def approve_cmd(bot: Client, message: Message):
         # This avoids the bulk `approve_all_chat_join_requests` path which
         # was timing out with -503 on large pending lists. Per-user calls
         # are cheap individually and FloodWait is handled per call.
+        #
+        # Users we cannot approve (deactivated accounts, accounts that
+        # are already in too many channels, etc.) are immediately declined
+        # so they don't sit in the pending queue forever.
         approved = 0
         failed = 0
+        declined = 0
         saved = 0
         last_edit = 0.0
+
+        async def _safe_decline(uid: int):
+            """Best-effort decline so a stuck user is removed from the
+            pending list. Returns True if the decline call succeeded."""
+            nonlocal declined
+            try:
+                await uc.decline_chat_join_request(chat_id, uid)
+                declined += 1
+                return True
+            except FloodWait as e:
+                await asyncio.sleep(e.value + 1)
+                try:
+                    await uc.decline_chat_join_request(chat_id, uid)
+                    declined += 1
+                    return True
+                except Exception as ee:
+                    log.info(f"decline retry failed for {uid}: {ee}")
+                    return False
+            except Exception as e:
+                log.info(f"decline failed for {uid}: {e}")
+                return False
 
         try:
             async for req in uc.get_chat_join_requests(chat_id):
@@ -142,6 +168,7 @@ async def approve_cmd(bot: Client, message: Message):
                     except Exception as ee:
                         log.warning(f"approve retry failed for {user.id}: {ee}")
                         failed += 1
+                        await _safe_decline(user.id)
                 except UserAlreadyParticipant:
                     # Already in the chat — count as success.
                     approved += 1
@@ -149,11 +176,16 @@ async def approve_cmd(bot: Client, message: Message):
                     # No point continuing — bail out cleanly.
                     raise
                 except RPCError as e:
+                    # Examples: INPUT_USER_DEACTIVATED, USER_CHANNELS_TOO_MUCH,
+                    # PEER_ID_INVALID, etc. None of those are recoverable for
+                    # this user, so clean them out of the pending list.
                     log.warning(f"approve failed for {user.id}: {e}")
                     failed += 1
+                    await _safe_decline(user.id)
                 except Exception as e:
                     log.warning(f"approve unexpected for {user.id}: {e}")
                     failed += 1
+                    await _safe_decline(user.id)
 
                 # Live status update every ~2 seconds (Telegram rate-limits edits).
                 now = time.time()
@@ -162,7 +194,8 @@ async def approve_cmd(bot: Client, message: Message):
                         await status.edit_text(
                             f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
                             f"<b>ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>  "
-                            f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed}</code>",
+                            f"<b>ᴅᴇᴄʟɪɴᴇᴅ:</b> <code>{declined}</code>  "
+                            f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed - declined}</code>",
                             parse_mode=HTML,
                         )
                     except Exception:
@@ -191,11 +224,13 @@ async def approve_cmd(bot: Client, message: Message):
                 f"<b>ɴᴏ ᴘᴇɴᴅɪɴɢ ᴊᴏɪɴ ʀᴇǫᴜᴇsᴛs.</b>"
             )
         else:
+            still_failed = max(0, failed - declined)
             text = (
                 f"<b>✅ ᴅᴏɴᴇ</b>\n\n"
                 f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
                 f"<b>ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>\n"
-                f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed}</code>\n"
+                f"<b>ᴅᴇᴄʟɪɴᴇᴅ (ᴅᴇᴀᴄᴛɪᴠᴀᴛᴇᴅ / ʟɪᴍɪᴛ-ʜɪᴛ):</b> <code>{declined}</code>\n"
+                f"<b>sᴛɪʟʟ ғᴀɪʟᴇᴅ:</b> <code>{still_failed}</code>\n"
                 f"<b>ᴜsᴇʀs sᴀᴠᴇᴅ ᴛᴏ ᴅʙ:</b> <code>{saved}</code>"
             )
 
