@@ -15,10 +15,12 @@ HTML = enums.ParseMode.HTML
 
 START_TEXT = (
     "<b>ʜᴇʟʟᴏ</b> {mention}\n\n"
-    "<b>ɪ ᴀᴍ ᴀ ᴍᴜʟᴛɪ-ᴘᴜʀᴘᴏsᴇ ʙᴏᴛ.</b>\n"
-    "<b>• ᴄʟᴏɴᴇ / ғᴏʀᴡᴀʀᴅ ᴍᴇᴅɪᴀ ʙᴇᴛᴡᴇᴇɴ ᴄʜᴀɴɴᴇʟs (ᴇᴠᴇɴ ʀᴇsᴛʀɪᴄᴛᴇᴅ).</b>\n"
-    "<b>• ᴀᴜᴛᴏ-ᴀᴄᴄᴇᴘᴛ ᴊᴏɪɴ ʀᴇǫᴜᴇsᴛs ᴡʜᴇʀᴇ ɪ ᴀᴍ ᴀᴅᴍɪɴ.</b>\n\n"
-    "<b>ᴛᴀᴘ ᴄᴏᴍᴍᴀɴᴅs ʙᴇʟᴏᴡ ᴛᴏ sᴇᴇ ʜᴏᴡ ᴛᴏ ᴜsᴇ ᴇᴀᴄʜ ғᴇᴀᴛᴜʀᴇ.</b>"
+    "<b>ɪ ᴀᴍ ᴀ ᴍᴜʟᴛɪ-ᴘᴜʀᴘᴏsᴇ ᴛᴇʟᴇɢʀᴀᴍ ʙᴏᴛ.</b>\n\n"
+    "<b>ᴡʜᴀᴛ ɪ ᴄᴀɴ ᴅᴏ:</b>\n"
+    "<b>• ᴄʟᴏɴᴇ / ғᴏʀᴡᴀʀᴅ ᴍᴇᴅɪᴀ ʙᴇᴛᴡᴇᴇɴ ᴄʜᴀɴɴᴇʟs (ᴇᴠᴇɴ ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴏɴᴇs).</b>\n"
+    "<b>• ᴀᴜᴛᴏ-ᴀᴄᴄᴇᴘᴛ ᴊᴏɪɴ ʀᴇǫᴜᴇsᴛs ᴡʜᴇʀᴇ ɪ ᴀᴍ ᴀᴅᴍɪɴ + sᴇɴᴅ ᴀ ᴡᴇʟᴄᴏᴍᴇ ᴘᴍ.</b>\n"
+    "<b>• ᴀᴜᴛᴏ-ᴘᴏsᴛ ᴘʀᴏᴍᴏs ᴏɴ ᴀ sᴄʜᴇᴅᴜʟᴇ — ᴅᴇʟᴇᴛᴇ ᴏʟᴅ, ʀᴇ-ᴘᴏsᴛ ɴᴇᴡ ᴇᴠᴇʀʏ X ᴍɪɴ.</b>\n\n"
+    "<b>ᴛᴀᴘ ᴄᴏᴍᴍᴀɴᴅs ʙᴇʟᴏᴡ ᴛᴏ sᴇᴇ ʜᴏᴡ ᴇᴀᴄʜ ғᴇᴀᴛᴜʀᴇ ᴡᴏʀᴋs.</b>"
 )
 
 
@@ -52,29 +54,23 @@ ACCEPT_TEXT = (
 
 PROMO_TEXT = (
     "<b>📣 Auto-Promo (owner only)</b>\n\n"
-    "<b>How it works</b>\n"
-    "Schedule a promotional message in any channel where the bot is admin. "
-    "Every X minutes (default 20) the bot deletes the previous promo post and reposts a fresh copy.\n\n"
+    "Schedule a promo in any channel where the bot is admin. Every X min "
+    "(default 20) the bot deletes the previous post and reposts a fresh copy.\n\n"
     "<b>Setup</b>\n"
-    "1. Add the bot as admin in the target channel with <b>Post Messages</b> + <b>Delete Messages</b> permissions\n"
+    "1. Make the bot admin with <b>Post</b> + <b>Delete</b> messages perms\n"
     "2. <code>/setp &lt;chat_id|@username&gt;</code>\n"
-    "3. Bot replies asking for the promo — send any message:\n"
-    "   • plain text (links, bold, italic, etc. are kept)\n"
-    "   • photo / video / audio / voice / animation / sticker / document\n"
-    "   • any combination of media + caption\n"
-    "4. Bot confirms and gives you a promo <code>id</code> — loop starts immediately\n\n"
+    "3. Send the promo — text / photo / video / audio / any combo. "
+    "All formatting (links, bold, italic, etc.) is preserved\n"
+    "4. Loop starts immediately, default 20 min interval\n\n"
     "<b>Manage</b>\n"
-    "<code>/list</code> — list all promos\n"
-    "<code>/ptime &lt;id&gt; &lt;minutes&gt;</code> — change interval\n"
+    "<code>/list</code> — all promos\n"
+    "<code>/ptime &lt;id&gt; &lt;min&gt;</code> — change interval\n"
     "<code>/promoon &lt;id&gt;</code> — enable\n"
     "<code>/promooff &lt;id&gt;</code> — pause\n"
     "<code>/delpromo &lt;id&gt;</code> — delete\n"
     "<code>/promostatus [id]</code> — details\n"
-    "<code>/cancelp</code> — abort a pending /setp\n\n"
-    "<b>Note:</b> all Telegram formatting entities (clickable links inside text, bold, italic, "
-    "spoiler, code, etc.) are preserved exactly because the bot uses copy_message under the hood. "
-    "Multiple promos are supported — each with its own target channel and interval. "
-    "Enabled promos resume automatically after a bot restart."
+    "<code>/cancelp</code> — cancel a pending /setp\n\n"
+    "Multiple promos supported. Enabled promos auto-resume after bot restart."
 )
 
 
@@ -142,15 +138,36 @@ def back_keyboard() -> InlineKeyboardMarkup:
 
 
 async def _edit_screen(query: CallbackQuery, caption: str, keyboard: InlineKeyboardMarkup):
+    edited = False
     try:
         await query.message.edit_caption(
             caption=caption,
             parse_mode=HTML,
             reply_markup=keyboard,
         )
+        edited = True
     except Exception:
         try:
             await query.message.edit_text(
+                text=caption,
+                parse_mode=HTML,
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
+            edited = True
+        except Exception:
+            pass
+
+    if not edited:
+        # Fallback: delete the old message and send a fresh text one. This
+        # handles cases where the original is a photo (with a 1024-char caption
+        # limit) but the new screen text is longer.
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        try:
+            await query.message.chat.send_message(
                 text=caption,
                 parse_mode=HTML,
                 reply_markup=keyboard,
