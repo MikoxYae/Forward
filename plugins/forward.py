@@ -15,19 +15,22 @@ HTML = enums.ParseMode.HTML
 # Per-user forward task state
 forward_state: dict[int, dict] = {}
 
+# How many message IDs to fetch in one API call.
+# Telegram allows up to 200 per messages.GetMessages request.
+FETCH_BATCH = 200
+
 # --------------- Link parsing ---------------
 # Private channel  : https://t.me/c/<id>/<start>[-<end>]
 # Public channel   : https://t.me/<username>/<start>[-<end>]
 # Bot direct link  : https://t.me/bot/<username>/<start>[-<end>]
-PRIVATE_RE  = re.compile(r"https?://t\.me/c/(\d+)/(\d+)(?:[-/](\d+))?/?$")
-PUBLIC_RE   = re.compile(r"https?://t\.me/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
-BOT_RE      = re.compile(r"https?://t\.me/bot/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
+PRIVATE_RE = re.compile(r"https?://t\.me/c/(\d+)/(\d+)(?:[-/](\d+))?/?$")
+PUBLIC_RE  = re.compile(r"https?://t\.me/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
+BOT_RE     = re.compile(r"https?://t\.me/bot/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
 
 def parse_link(url: str):
     """Return (chat_id_or_username, start_id, end_id) or None."""
     url = url.strip()
 
-    # Private channel: t.me/c/<numeric_id>/...
     m = PRIVATE_RE.match(url)
     if m:
         chat  = int("-100" + m.group(1))
@@ -35,15 +38,14 @@ def parse_link(url: str):
         end   = int(m.group(3)) if m.group(3) else start
         return chat, start, end
 
-    # Bot direct link: t.me/bot/<username>/...  (check BEFORE PUBLIC_RE)
+    # Bot link must be checked BEFORE public so "bot" prefix is caught
     m = BOT_RE.match(url)
     if m:
-        chat  = m.group(1)          # username of the bot
+        chat  = m.group(1)
         start = int(m.group(2))
         end   = int(m.group(3)) if m.group(3) else start
         return chat, start, end
 
-    # Public channel/group: t.me/<username>/...
     m = PUBLIC_RE.match(url)
     if m:
         chat  = m.group(1)
@@ -79,7 +81,6 @@ def _get_sender_id(msg: Message) -> int | None:
     return None
 
 def _sender_allowed(msg: Message, source_username: str | None, source_id: int | None) -> bool:
-    # Private numeric-ID channel — all messages belong to it, no filter needed
     if source_id is not None and source_username is None:
         return True
     msg_username = _get_sender_username(msg)
@@ -182,61 +183,81 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
     ok = fail = skip = 0
     seen_groups: set[str] = set()
     last_edit = 0.0
+    processed = 0
+
+    all_ids = list(range(start_id, end_id + 1))
 
     try:
-        for msg_id in range(start_id, end_id + 1):
+        # ── Fetch FETCH_BATCH message IDs per API call instead of one by one ──
+        for chunk_start in range(0, len(all_ids), FETCH_BATCH):
             if forward_state.get(user_id, {}).get("cancel"):
                 break
 
+            chunk = all_ids[chunk_start : chunk_start + FETCH_BATCH]
+
+            # One API call for up to 200 IDs — dramatically fewer FloodWaits
             try:
-                msg = await user_client.get_messages(src, msg_id)
+                msgs = await user_client.get_messages(src, chunk)
             except FloodWait as e:
-                await asyncio.sleep(e.value + 1)
+                await asyncio.sleep(e.value + 2)
                 try:
-                    msg = await user_client.get_messages(src, msg_id)
+                    msgs = await user_client.get_messages(src, chunk)
                 except Exception:
-                    fail += 1
+                    fail += len(chunk)
+                    processed += len(chunk)
                     continue
             except Exception:
-                fail += 1
+                fail += len(chunk)
+                processed += len(chunk)
                 continue
 
-            if not msg or getattr(msg, "empty", False) or msg.service:
-                skip += 1
-                continue
+            # msgs may come back in any order or as a single Message — normalise
+            if isinstance(msgs, Message):
+                msgs = [msgs]
 
-            # Sender filter — only forward messages from the source bot/channel
-            if not _sender_allowed(msg, source_username, source_id):
-                skip += 1
-                continue
+            for msg in msgs:
+                if forward_state.get(user_id, {}).get("cancel"):
+                    break
 
-            if msg.media_group_id:
-                if msg.media_group_id in seen_groups:
+                processed += 1
+
+                if not msg or getattr(msg, "empty", False) or msg.service:
+                    skip += 1
                     continue
-                seen_groups.add(msg.media_group_id)
-                if await _send_media_group(user_client, src, msg.id, dest):
-                    ok += 1
-                else:
-                    fail += 1
-            else:
-                if await _send_one(user_client, msg, dest):
-                    ok += 1
-                else:
-                    fail += 1
 
-            await asyncio.sleep(1.0)
+                # Sender filter
+                if not _sender_allowed(msg, source_username, source_id):
+                    skip += 1
+                    continue
 
-            now = time.time()
-            if now - last_edit > 5:
-                try:
-                    await status.edit_text(
-                        f"⏳ <b>ᴘʀᴏɢʀᴇss:</b> <code>{msg_id - start_id + 1}/{total}</code>\n"
-                        f"✅ <code>{ok}</code> | ❌ <code>{fail}</code> | ⏭ <code>{skip}</code>",
-                        parse_mode=HTML,
-                    )
-                except Exception:
-                    pass
-                last_edit = now
+                if msg.media_group_id:
+                    if msg.media_group_id in seen_groups:
+                        continue
+                    seen_groups.add(msg.media_group_id)
+                    if await _send_media_group(user_client, src, msg.id, dest):
+                        ok += 1
+                    else:
+                        fail += 1
+                else:
+                    if await _send_one(user_client, msg, dest):
+                        ok += 1
+                    else:
+                        fail += 1
+
+                await asyncio.sleep(0.5)
+
+                now = time.time()
+                if now - last_edit > 5:
+                    try:
+                        await status.edit_text(
+                            f"⏳ <b>ᴘʀᴏɢʀᴇss:</b> <code>{processed}/{total}</code>\n"
+                            f"✅ <code>{ok}</code> | ❌ <code>{fail}</code> | ⏭ <code>{skip}</code>",
+                            parse_mode=HTML,
+                        )
+                    except Exception:
+                        pass
+                    last_edit = now
+
     finally:
         try:
             await user_client.stop()
