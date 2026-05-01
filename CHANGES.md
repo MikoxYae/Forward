@@ -1,27 +1,54 @@
 # CHANGES
 
-## Fix: Sender Filter for `/forward` command
+## Fix 1: Sender Filter for `/forward` command
 
 ### Problem
 When using `/forward` with a public bot/channel link (e.g. `https://t.me/Basic_need2bot/102130-134653`),
-the bot was forwarding **all messages** in that ID range — including messages sent by **other bots or users**
-inside the same chat. This caused irrelevant content from other senders to leak into the destination channel.
-
-### Root Cause
-The forward loop fetched every message by ID in the given range but had **no check** on who sent the message.
-In public group-style bots, multiple bots or users may post in the same chat, each with different `from_user`
-or `sender_chat` fields.
+the bot forwarded **all messages** in the range — including messages from **other bots/users** in the same chat.
 
 ### Fix
-Added a sender filter (`_sender_allowed`) that compares the **username** (for public links) or **numeric ID**
-(for private `t.me/c/...` links) of each message's sender against the source entity from the `/forward` link.
+Added `_sender_allowed()` helper that checks each message's sender (by username for public links,
+by numeric ID for private `t.me/c/...` links) against the source in the link.
 
-- ✅ Messages from the source bot/channel → forwarded as normal
-- ❌ Messages from any other sender → **skipped** (counted in the skip counter)
+- ✅ Messages from the source bot/channel → forwarded
+- ❌ Messages from any other sender → skipped
 
-For private numeric-ID channels (`-100...`), the filter is bypassed since every message in that channel
-already belongs to it.
+---
+
+## Fix 2: Batch/Album broken on restricted channels
+
+### Problem
+When a message was part of a media group (album/batch) on a **restricted channel**:
+1. `get_media_group()` fails → `group = []`  (empty list)
+2. `copy_media_group()` also fails (restricted)
+3. Fallback loop runs on empty `group` → **nothing forwarded** ❌
+4. Bot silently returns `False`, album is lost
+
+### Root Cause
+```python
+except Exception:
+    group = []   # ← silent failure, group wiped
+    captions = None
+
+# ... copy_media_group fails too ...
+
+for item in group:   # ← group is [], loop never runs
+    download_reupload(item)
+
+return False  # ← entire album silently dropped
+```
+
+### Fix
+Added a **4-step fallback chain** in `_send_media_group`:
+
+| Step | Action | Works when |
+|---|---|---|
+| 1 | `get_media_group` | Always tried first |
+| 2 | `copy_media_group` | Non-restricted channels |
+| 3 | Per-item `download_reupload` loop | Restricted + album fetch succeeded |
+| 4 | Single anchor-message `download_reupload` | Restricted + album fetch failed |
+
+Step 4 is the key new addition — even if the full album can't be fetched, the **anchor message** (the one whose ID was in the range) is still downloaded and re-uploaded individually, so nothing is silently lost.
 
 ### Files Changed
-- `plugins/forward.py` — added `_get_sender_username`, `_get_sender_id`, `_sender_allowed` helpers
-  and applied the filter inside the main forward loop.
+- `plugins/forward.py` — both fixes applied
