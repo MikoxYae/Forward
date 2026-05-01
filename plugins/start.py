@@ -89,6 +89,7 @@ FORWARD_TEXT = (
     "• <b>📤 Set Source</b> · <b>📥 Set Dest</b> · <b>🧹 Clear Fwd</b>\n\n"
     "<b>Forwarding</b>\n"
     "<code>/forward &lt;link&gt;</code> — forward/clone messages\n"
+    "<code>/status</code> — check progress anytime
     "<code>/stop</code> — stop the running task\n\n"
     "<b>Tip:</b> send the OTP with spaces (e.g. 1 2 3 4 5) so Telegram does not invalidate it."
 )
@@ -111,6 +112,7 @@ BATCH_TEXT = (
     "<b>Commands</b>\n"
     "<code>/batch &lt;link&gt;</code> — start batch save\n"
     "<code>/forward &lt;link&gt;</code> — also supports bot chat links\n"
+    "<code>/status</code> — check progress anytime\n"
     "<code>/stop</code> — stop running task\n\n"
     "<b>Requirements</b>\n"
     "• Must be logged in (<code>/login</code>)\n"
