@@ -173,4 +173,25 @@ class Database:
         return await self.promos.count_documents({"owner_id": int(owner_id)})
 
 
+
+    # ---------------- RESUME (batch progress) ----------------
+    async def save_resume(self, user_id: int, src: str, dest: str,
+                          start_id: int, end_id: int, last_id: int):
+        await self.settings.update_one(
+            {"_id": f"resume:{user_id}"},
+            {"$set": {
+                "src": src, "dest": dest,
+                "start_id": start_id, "end_id": end_id,
+                "last_id": last_id,
+            }},
+            upsert=True,
+        )
+
+    async def get_resume(self, user_id: int):
+        doc = await self.settings.find_one({"_id": f"resume:{user_id}"})
+        return doc if doc else None
+
+    async def clear_resume(self, user_id: int):
+        await self.settings.delete_one({"_id": f"resume:{user_id}"})
+
 db = Database(MONGO_URI, DB_NAME)
