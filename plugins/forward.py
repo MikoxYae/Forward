@@ -16,23 +16,41 @@ HTML = enums.ParseMode.HTML
 forward_state: dict[int, dict] = {}
 
 # --------------- Link parsing ---------------
-PRIVATE_RE = re.compile(r"https?://t\.me/c/(\d+)/(\d+)(?:[-/](\d+))?/?$")
-PUBLIC_RE  = re.compile(r"https?://t\.me/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
+# Private channel  : https://t.me/c/<id>/<start>[-<end>]
+# Public channel   : https://t.me/<username>/<start>[-<end>]
+# Bot direct link  : https://t.me/bot/<username>/<start>[-<end>]
+PRIVATE_RE  = re.compile(r"https?://t\.me/c/(\d+)/(\d+)(?:[-/](\d+))?/?$")
+PUBLIC_RE   = re.compile(r"https?://t\.me/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
+BOT_RE      = re.compile(r"https?://t\.me/bot/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
 
 def parse_link(url: str):
+    """Return (chat_id_or_username, start_id, end_id) or None."""
     url = url.strip()
+
+    # Private channel: t.me/c/<numeric_id>/...
     m = PRIVATE_RE.match(url)
     if m:
         chat  = int("-100" + m.group(1))
         start = int(m.group(2))
         end   = int(m.group(3)) if m.group(3) else start
         return chat, start, end
+
+    # Bot direct link: t.me/bot/<username>/...  (check BEFORE PUBLIC_RE)
+    m = BOT_RE.match(url)
+    if m:
+        chat  = m.group(1)          # username of the bot
+        start = int(m.group(2))
+        end   = int(m.group(3)) if m.group(3) else start
+        return chat, start, end
+
+    # Public channel/group: t.me/<username>/...
     m = PUBLIC_RE.match(url)
     if m:
         chat  = m.group(1)
         start = int(m.group(2))
         end   = int(m.group(3)) if m.group(3) else start
         return chat, start, end
+
     return None
 
 def _resolve_dest(dest_raw: str):
@@ -83,7 +101,7 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
             "📌 <b>ᴇxᴀᴍᴘʟᴇs:</b>\n"
             f"<code>/{cmd_name} https://t.me/c/1234567890/2-100</code>\n"
             f"<code>/{cmd_name} https://t.me/channelname/5-50</code>\n"
-            f"<code>/{cmd_name} https://t.me/c/1234567890/42</code>",
+            f"<code>/{cmd_name} https://t.me/bot/Basic_need2bot/102130-134653</code>",
             parse_mode=HTML,
         )
 
@@ -110,9 +128,11 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
     parsed = parse_link(message.command[1])
     if not parsed:
         return await message.reply_text(
-            "❌ <b>ɪɴᴠᴀʟɪᴅ ʟɪɴᴋ. ᴜsᴇ</b> "
-            "<code>https://t.me/c/&lt;id&gt;/&lt;start&gt;-&lt;end&gt;</code> "
-            "<b>ᴏʀ</b> <code>https://t.me/&lt;username&gt;/&lt;start&gt;-&lt;end&gt;</code>.",
+            "❌ <b>ɪɴᴠᴀʟɪᴅ ʟɪɴᴋ.</b>\n\n"
+            "📌 <b>sᴜᴘᴘᴏʀᴛᴇᴅ ғᴏʀᴍᴀᴛs:</b>\n"
+            "<code>https://t.me/c/&lt;id&gt;/&lt;start&gt;-&lt;end&gt;</code>\n"
+            "<code>https://t.me/&lt;username&gt;/&lt;start&gt;-&lt;end&gt;</code>\n"
+            "<code>https://t.me/bot/&lt;username&gt;/&lt;start&gt;-&lt;end&gt;</code>",
             parse_mode=HTML,
         )
 
@@ -185,7 +205,7 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
                 skip += 1
                 continue
 
-            # Sender filter — skip messages not from the source bot/channel
+            # Sender filter — only forward messages from the source bot/channel
             if not _sender_allowed(msg, source_username, source_id):
                 skip += 1
                 continue
@@ -236,7 +256,7 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
 # --------------- Commands (/forward and /batch both work) ---------------
 @Client.on_message(filters.command(["forward", "batch"]) & filters.private)
 async def forward_or_batch_cmd(bot: Client, message: Message):
-    cmd = message.command[0].lower()   # "forward" or "batch"
+    cmd = message.command[0].lower()
     await _run_forward(bot, message, cmd)
 
 
@@ -249,10 +269,7 @@ async def stop_cmd(bot: Client, message: Message):
             parse_mode=HTML,
         )
     forward_state[user_id]["cancel"] = True
-    await message.reply_text(
-        "🛑 <b>ᴄᴀɴᴄᴇʟʟɪɴɢ...</b>",
-        parse_mode=HTML,
-    )
+    await message.reply_text("🛑 <b>ᴄᴀɴᴄᴇʟʟɪɴɢ...</b>", parse_mode=HTML)
 
 
 # --------------- Internals ---------------
@@ -272,7 +289,6 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
     group: list[Message] = []
     captions = None
 
-    # Step 1: fetch the full album
     try:
         group    = await user_client.get_media_group(src, anchor_id)
         captions = [
@@ -283,7 +299,6 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
         group    = []
         captions = None
 
-    # Step 2: copy_media_group (non-restricted channels)
     try:
         await user_client.copy_media_group(dest, src, anchor_id, captions=captions)
         return True
@@ -292,7 +307,6 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
     except Exception:
         pass
 
-    # Step 3: album fetched — download each item individually
     if group:
         any_ok = False
         for item in group:
@@ -301,7 +315,7 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
             await asyncio.sleep(0.5)
         return any_ok
 
-    # Step 4: album fetch also failed — download anchor message alone
+    # Last resort — anchor message alone
     try:
         anchor_msg = await user_client.get_messages(src, anchor_id)
         if anchor_msg and not getattr(anchor_msg, "empty", False):
