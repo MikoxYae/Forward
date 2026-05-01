@@ -18,6 +18,7 @@ START_TEXT = (
     "<b>ɪ ᴀᴍ ᴀ ᴍᴜʟᴛɪ-ᴘᴜʀᴘᴏsᴇ ᴛᴇʟᴇɢʀᴀᴍ ʙᴏᴛ.</b>\n\n"
     "<b>ᴡʜᴀᴛ ɪ ᴄᴀɴ ᴅᴏ:</b>\n"
     "<b>• ᴄʟᴏɴᴇ / ғᴏʀᴡᴀʀᴅ ᴍᴇᴅɪᴀ ʙᴇᴛᴡᴇᴇɴ ᴄʜᴀɴɴᴇʟs (ᴇᴠᴇɴ ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴏɴᴇs).</b>\n"
+    "<b>• sᴀᴠᴇ ʙᴏᴛ ᴄʜᴀᴛ ᴄᴏɴᴛᴇɴᴛ ɪɴ ʙᴀᴛᴄʜ (/batch).</b>\n"
     "<b>• ᴀᴜᴛᴏ-ᴀᴄᴄᴇᴘᴛ ᴊᴏɪɴ ʀᴇǫᴜᴇsᴛs ᴡʜᴇʀᴇ ɪ ᴀᴍ ᴀᴅᴍɪɴ + sᴇɴᴅ ᴀ ᴡᴇʟᴄᴏᴍᴇ ᴘᴍ.</b>\n"
     "<b>• ᴀᴜᴛᴏ-ᴘᴏsᴛ ᴘʀᴏᴍᴏs ᴏɴ ᴀ sᴄʜᴇᴅᴜʟᴇ — ᴅᴇʟᴇᴛᴇ ᴏʟᴅ, ʀᴇ-ᴘᴏsᴛ ɴᴇᴡ ᴇᴠᴇʀʏ X ᴍɪɴ.</b>\n\n"
     "<b>ᴛᴀᴘ ᴄᴏᴍᴍᴀɴᴅs ʙᴇʟᴏᴡ ᴛᴏ sᴇᴇ ʜᴏᴡ ᴇᴀᴄʜ ғᴇᴀᴛᴜʀᴇ ᴡᴏʀᴋs.</b>"
@@ -32,11 +33,11 @@ COMMANDS_MENU_TEXT = (
 ACCEPT_TEXT = (
     "<b>🛡 Auto-Accept Join Requests</b>\n\n"
     "<b>How it works</b>\n"
-    "The bot auto-approves every join request in any channel/group where it is admin.\n\n"
+    "The bot auto-approves every join request instantly in any channel/group where it is admin.\n\n"
     "<b>Setup</b>\n"
     "1. Enable \"Approve New Members\" in chat settings\n"
     "2. Add the bot as admin with \"Add Members\" permission\n"
-    "3. Done — new join requests are auto-accepted\n\n"
+    "3. Done — new join requests are auto-accepted at maximum speed\n\n"
     "<b>Old pending requests</b> (login required)\n"
     "<code>/approve &lt;chat_id|@username&gt;</code> — bulk-approve all pending requests using your logged-in account\n\n"
     "<b>Welcome PM</b> (chat admins)\n"
@@ -87,9 +88,34 @@ FORWARD_TEXT = (
     "<b>Config (all in /settings)</b>\n"
     "• <b>📤 Set Source</b> · <b>📥 Set Dest</b> · <b>🧹 Clear Fwd</b>\n\n"
     "<b>Forwarding</b>\n"
-    "<code>/forward &lt;link&gt;</code> — start from that message\n"
-    "<code>/stop</code> — stop the running forward\n\n"
+    "<code>/forward &lt;link&gt;</code> — forward/clone messages\n"
+    "<code>/stop</code> — stop the running task\n\n"
     "<b>Tip:</b> send the OTP with spaces (e.g. 1 2 3 4 5) so Telegram does not invalidate it."
+)
+
+
+BATCH_TEXT = (
+    "<b>📦 Batch / Bot Chat Save</b>\n\n"
+    "<b>What is this?</b>\n"
+    "Save content from <b>bot chats</b> (even save-restricted bots) or bulk-forward any channel range.\n\n"
+    "<b>How to get Bot Message IDs</b>\n"
+    "1. Install <b>Plus Messenger</b> (unofficial Telegram client)\n"
+    "2. Open the bot chat → long-press any message → message ID is visible\n\n"
+    "<b>Link Formats</b>\n"
+    "Single message:\n"
+    "<code>https://t.me/bot/&lt;botusername&gt;/&lt;msg_id&gt;</code>\n"
+    "Example: <code>https://t.me/bot/save_restrict_1bot/8628</code>\n\n"
+    "Batch (range):\n"
+    "<code>https://t.me/bot/&lt;botusername&gt;/&lt;first_id&gt;-&lt;last_id&gt;</code>\n"
+    "Example: <code>https://t.me/bot/save_restrict_1bot/8628-8650</code>\n\n"
+    "<b>Commands</b>\n"
+    "<code>/batch &lt;link&gt;</code> — start batch save\n"
+    "<code>/forward &lt;link&gt;</code> — also supports bot chat links\n"
+    "<code>/stop</code> — stop running task\n\n"
+    "<b>Requirements</b>\n"
+    "• Must be logged in (<code>/login</code>)\n"
+    "• Destination must be set in <code>/settings</code>\n"
+    "• The bot must have sent you those messages (your own chat history)"
 )
 
 
@@ -114,7 +140,10 @@ def commands_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("ᴀᴜᴛᴏ ᴀᴄᴄᴇᴘᴛ", callback_data="show_accept"),
                 InlineKeyboardButton("ғᴏʀᴡᴀʀᴅ", callback_data="show_forward"),
             ],
-            [InlineKeyboardButton("ᴀᴜᴛᴏ ᴘʀᴏᴍᴏ", callback_data="show_promo")],
+            [
+                InlineKeyboardButton("ᴀᴜᴛᴏ ᴘʀᴏᴍᴏ", callback_data="show_promo"),
+                InlineKeyboardButton("📦 ʙᴀᴛᴄʜ / ʙᴏᴛ sᴀᴠᴇ", callback_data="show_batch"),
+            ],
             [InlineKeyboardButton("ʙᴀᴄᴋ", callback_data="back_start")],
         ]
     )
@@ -154,9 +183,6 @@ async def _edit_screen(query: CallbackQuery, caption: str, keyboard: InlineKeybo
             pass
 
     if not edited:
-        # Fallback: delete the old message and send a fresh text one. This
-        # handles cases where the original is a photo (with a 1024-char caption
-        # limit) but the new screen text is longer.
         try:
             await query.message.delete()
         except Exception:
@@ -215,3 +241,8 @@ async def show_forward(client: Client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex("^show_promo$"))
 async def show_promo(client: Client, query: CallbackQuery):
     await _edit_screen(query, PROMO_TEXT, back_to_commands_keyboard())
+
+
+@Client.on_callback_query(filters.regex("^show_batch$"))
+async def show_batch(client: Client, query: CallbackQuery):
+    await _edit_screen(query, BATCH_TEXT, back_to_commands_keyboard())

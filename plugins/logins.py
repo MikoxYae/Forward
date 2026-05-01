@@ -182,7 +182,7 @@ async def cancel_cmd(client: Client, message: Message):
     & filters.text
     & ~filters.command(
         ["start", "help", "login", "cancel", "settings",
-         "forward", "stop", "approve",
+         "forward", "batch", "stop", "approve",
          "stats", "chats", "broadcast",
          "setwelcome", "clearwelcome", "togglewelcome", "welcome"]
     )

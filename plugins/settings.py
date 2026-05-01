@@ -171,7 +171,11 @@ async def _render_main(bot: Client, user_id: int):
             InlineKeyboardButton("📥 sᴇᴛ ᴅᴇsᴛ", callback_data="set:dst"),
         ],
         [
-            InlineKeyboardButton("🧹 ᴄʟᴇᴀʀ ғᴡᴅ", callback_data="set:fwd_clear"),
+            InlineKeyboardButton("🗑 ʀᴇᴍᴏᴠᴇ sʀᴄ", callback_data="set:rm_src"),
+            InlineKeyboardButton("🗑 ʀᴇᴍᴏᴠᴇ ᴅᴇsᴛ", callback_data="set:rm_dst"),
+        ],
+        [
+            InlineKeyboardButton("📋 ʟɪsᴛ sᴇᴛᴛɪɴɢs", callback_data="set:fwd_list"),
             InlineKeyboardButton("🚪 ʟᴏɢᴏᴜᴛ", callback_data="set:logout"),
         ],
         [
@@ -675,6 +679,72 @@ async def cb_fwd_clear_yes(bot: Client, query: CallbackQuery):
     await db.clear_user_setting(user_id, "destination")
     await query.answer("ᴄʟᴇᴀʀᴇᴅ")
     await _render_main(bot, user_id)
+
+
+# ---------------- remove source ----------------
+@Client.on_callback_query(filters.regex(r"^set:rm_src$"))
+async def cb_rm_src(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    src = await db.get_user_setting(user_id, "source")
+    await query.answer()
+    if not src:
+        await _edit_panel(
+            bot, user_id,
+            "<b>📤 sᴏᴜʀᴄᴇ</b>\n\n<b>ɴᴏ sᴏᴜʀᴄᴇ ɪs sᴇᴛ.</b>",
+            _back_kb(),
+        )
+        return
+    await db.clear_user_setting(user_id, "source")
+    await query.answer("sᴏᴜʀᴄᴇ ʀᴇᴍᴏᴠᴇᴅ")
+    await _render_main(bot, user_id)
+
+
+# ---------------- remove destination ----------------
+@Client.on_callback_query(filters.regex(r"^set:rm_dst$"))
+async def cb_rm_dst(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    dst = await db.get_user_setting(user_id, "destination")
+    await query.answer()
+    if not dst:
+        await _edit_panel(
+            bot, user_id,
+            "<b>📥 ᴅᴇsᴛɪɴᴀᴛɪᴏɴ</b>\n\n<b>ɴᴏ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɪs sᴇᴛ.</b>",
+            _back_kb(),
+        )
+        return
+    await db.clear_user_setting(user_id, "destination")
+    await query.answer("ᴅᴇsᴛ ʀᴇᴍᴏᴠᴇᴅ")
+    await _render_main(bot, user_id)
+
+
+# ---------------- list current fwd settings ----------------
+@Client.on_callback_query(filters.regex(r"^set:fwd_list$"))
+async def cb_fwd_list(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    await query.answer()
+
+    src = await db.get_user_setting(user_id, "source")
+    dst = await db.get_user_setting(user_id, "destination")
+    session = await db.get_session(user_id)
+
+    await _edit_panel(
+        bot, user_id,
+        "<b>📋 ᴄᴜʀʀᴇɴᴛ ғᴏʀᴡᴀʀᴅ sᴇᴛᴛɪɴɢs</b>\n\n"
+        f"<b>ʟᴏɢɪɴ:</b> <code>{'✅ yes' if session else '❌ no'}</code>\n"
+        f"<b>sᴏᴜʀᴄᴇ:</b> <code>{src or '—  not set'}</code>\n"
+        f"<b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ:</b> <code>{dst or '—  not set'}</code>\n\n"
+        "<b>ᴜsᴇ ʙᴜᴛᴛᴏɴs ᴛᴏ ᴄʜᴀɴɢᴇ sᴇᴛᴛɪɴɢs.</b>",
+        _back_kb(),
+    )
 
 
 # ---------------- logout ----------------
