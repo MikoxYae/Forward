@@ -689,8 +689,8 @@ async def cb_rm_src(bot: Client, query: CallbackQuery):
     settings_state[user_id]["panel_chat_id"] = query.message.chat.id
     settings_state[user_id]["panel_msg_id"] = query.message.id
     src = await db.get_user_setting(user_id, "source")
-    await query.answer()
     if not src:
+        await query.answer()
         await _edit_panel(
             bot, user_id,
             "<b>📤 sᴏᴜʀᴄᴇ</b>\n\n<b>ɴᴏ sᴏᴜʀᴄᴇ ɪs sᴇᴛ.</b>",
@@ -698,7 +698,7 @@ async def cb_rm_src(bot: Client, query: CallbackQuery):
         )
         return
     await db.clear_user_setting(user_id, "source")
-    await query.answer("sᴏᴜʀᴄᴇ ʀᴇᴍᴏᴠᴇᴅ")
+    await query.answer("sᴏᴜʀᴄᴇ ʀᴇᴍᴏᴠᴇᴅ ✅")
     await _render_main(bot, user_id)
 
 
@@ -710,8 +710,8 @@ async def cb_rm_dst(bot: Client, query: CallbackQuery):
     settings_state[user_id]["panel_chat_id"] = query.message.chat.id
     settings_state[user_id]["panel_msg_id"] = query.message.id
     dst = await db.get_user_setting(user_id, "destination")
-    await query.answer()
     if not dst:
+        await query.answer()
         await _edit_panel(
             bot, user_id,
             "<b>📥 ᴅᴇsᴛɪɴᴀᴛɪᴏɴ</b>\n\n<b>ɴᴏ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɪs sᴇᴛ.</b>",
@@ -719,7 +719,7 @@ async def cb_rm_dst(bot: Client, query: CallbackQuery):
         )
         return
     await db.clear_user_setting(user_id, "destination")
-    await query.answer("ᴅᴇsᴛ ʀᴇᴍᴏᴠᴇᴅ")
+    await query.answer("ᴅᴇsᴛ ʀᴇᴍᴏᴠᴇᴅ ✅")
     await _render_main(bot, user_id)
 
 

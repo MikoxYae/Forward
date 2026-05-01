@@ -328,13 +328,14 @@ async def stop_cmd(bot: Client, message: Message):
 async def _send_one(user_client: Client, msg: Message, dest) -> bool:
     bold = _bold_caption(msg)
 
-    try:
-        await msg.copy(dest, caption=bold, parse_mode=HTML)
-        return True
-    except FloodWait as e:
-        await asyncio.sleep(e.value + 1)
-    except Exception:
-        pass
+    for attempt in range(2):
+        try:
+            await msg.copy(dest, caption=bold, parse_mode=HTML)
+            return True
+        except FloodWait as e:
+            await asyncio.sleep(e.value + 1)
+        except Exception:
+            break
 
     return await _download_reupload(user_client, msg, dest)
 
@@ -350,13 +351,14 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
         group = []
         captions = None
 
-    try:
-        await user_client.copy_media_group(dest, src, anchor_id, captions=captions)
-        return True
-    except FloodWait as e:
-        await asyncio.sleep(e.value + 1)
-    except Exception:
-        pass
+    for attempt in range(2):
+        try:
+            await user_client.copy_media_group(dest, src, anchor_id, captions=captions)
+            return True
+        except FloodWait as e:
+            await asyncio.sleep(e.value + 1)
+        except Exception:
+            break
 
     any_ok = False
     for item in group:

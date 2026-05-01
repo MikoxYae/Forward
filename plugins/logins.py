@@ -155,6 +155,23 @@ async def login_cmd(client: Client, message: Message):
     _set_state(user_id, step="phone", chat_id=sent.chat.id, msg_id=sent.id, plain=True)
 
 
+@Client.on_message(filters.command("logout") & filters.private)
+async def logout_cmd(client: Client, message: Message):
+    user_id = message.from_user.id
+    sess = await db.get_session(user_id)
+    if not sess:
+        return await message.reply_text(
+            "<b>ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ʟᴏɢɢᴇᴅ ɪɴ.</b>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+    await db.delete_session(user_id)
+    login_state.pop(user_id, None)
+    await message.reply_text(
+        "<b>ʟᴏɢɢᴇᴅ ᴏᴜᴛ sᴜᴄᴄᴇssғᴜʟʟʏ. ᴜsᴇ /login ᴛᴏ sɪɢɴ ɪɴ ᴀɢᴀɪɴ.</b>",
+        parse_mode=enums.ParseMode.HTML,
+    )
+
+
 @Client.on_message(filters.command("cancel") & filters.private)
 async def cancel_cmd(client: Client, message: Message):
     user_id = message.from_user.id
@@ -181,7 +198,7 @@ async def cancel_cmd(client: Client, message: Message):
     filters.private
     & filters.text
     & ~filters.command(
-        ["start", "help", "login", "cancel", "settings",
+        ["start", "help", "login", "logout", "cancel", "settings",
          "forward", "batch", "stop", "approve",
          "stats", "chats", "broadcast",
          "setwelcome", "clearwelcome", "togglewelcome", "welcome"]
