@@ -72,24 +72,24 @@ def _sender_allowed(msg: Message, source_username: str | None, source_id: int | 
         return msg_id == source_id
     return True
 
-# --------------- Commands ---------------
-@Client.on_message(filters.command("forward") & filters.private)
-async def forward_cmd(bot: Client, message: Message):
+
+# --------------- Shared handler ---------------
+async def _run_forward(bot: Client, message: Message, cmd_name: str):
     user_id = message.from_user.id
 
     if len(message.command) < 2:
         return await message.reply_text(
-            "⚡ <b>ᴜsᴀɢᴇ:</b> <code>/forward &lt;link&gt;</code>\n\n"
+            f"⚡ <b>ᴜsᴀɢᴇ:</b> <code>/{cmd_name} &lt;link&gt;</code>\n\n"
             "📌 <b>ᴇxᴀᴍᴘʟᴇs:</b>\n"
-            "<code>/forward https://t.me/c/1234567890/2-100</code>\n"
-            "<code>/forward https://t.me/channelname/5-50</code>\n"
-            "<code>/forward https://t.me/c/1234567890/42</code>",
+            f"<code>/{cmd_name} https://t.me/c/1234567890/2-100</code>\n"
+            f"<code>/{cmd_name} https://t.me/channelname/5-50</code>\n"
+            f"<code>/{cmd_name} https://t.me/c/1234567890/42</code>",
             parse_mode=HTML,
         )
 
     if forward_state.get(user_id):
         return await message.reply_text(
-            "⚠️ <b>ᴀ ғᴏʀᴡᴀʀᴅ ᴛᴀsᴋ ɪs ᴀʟʀᴇᴀᴅʏ ʀᴜɴɴɪɴɢ. ᴜsᴇ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ ɪᴛ ғɪʀsᴛ.</b>",
+            "⚠️ <b>ᴀ ᴛᴀsᴋ ɪs ᴀʟʀᴇᴀᴅʏ ʀᴜɴɴɪɴɢ. ᴜsᴇ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ ɪᴛ ғɪʀsᴛ.</b>",
             parse_mode=HTML,
         )
 
@@ -129,11 +129,11 @@ async def forward_cmd(bot: Client, message: Message):
     forward_state[user_id] = {"cancel": False}
 
     status = await message.reply_text(
-        f"🚀 <b>sᴛᴀʀᴛɪɴɢ ғᴏʀᴡᴀʀᴅ</b>\n"
+        f"🚀 <b>sᴛᴀʀᴛɪɴɢ...</b>\n"
         f"📥 <b>sᴏᴜʀᴄᴇ:</b> <code>{src}</code>\n"
-        f"📤 <b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ:</b> <code>{dest}</code>\n"
-        f"🔢 <b>ʀᴀɴɢᴇ:</b> <code>{start_id}</code> <b>ᴛᴏ</b> <code>{end_id}</code> "
-        f"(<code>{total}</code> <b>ᴍᴇssᴀɢᴇs</b>)\n\n"
+        f"📤 <b>ᴅᴇsᴛ:</b> <code>{dest}</code>\n"
+        f"🔢 <b>ʀᴀɴɢᴇ:</b> <code>{start_id}</code> → <code>{end_id}</code> "
+        f"(<code>{total}</code> <b>ᴍsɢs</b>)\n\n"
         f"⏹ <b>ᴜsᴇ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ.</b>",
         parse_mode=HTML,
     )
@@ -150,7 +150,7 @@ async def forward_cmd(bot: Client, message: Message):
     except Exception as e:
         forward_state.pop(user_id, None)
         return await status.edit_text(
-            f"❌ <b>ғᴀɪʟᴇᴅ ᴛᴏ sᴛᴀʀᴛ ʏᴏᴜʀ sᴇssɪᴏɴ:</b> <code>{e}</code>",
+            f"❌ <b>sᴇssɪᴏɴ ᴇʀʀᴏʀ:</b> <code>{e}</code>",
             parse_mode=HTML,
         )
 
@@ -185,7 +185,7 @@ async def forward_cmd(bot: Client, message: Message):
                 skip += 1
                 continue
 
-            # Sender filter — skip messages not from source bot/channel
+            # Sender filter — skip messages not from the source bot/channel
             if not _sender_allowed(msg, source_username, source_id):
                 skip += 1
                 continue
@@ -210,11 +210,8 @@ async def forward_cmd(bot: Client, message: Message):
             if now - last_edit > 5:
                 try:
                     await status.edit_text(
-                        f"⏳ <b>ғᴏʀᴡᴀʀᴅɪɴɢ...</b>\n"
-                        f"📊 <b>ᴘʀᴏɢʀᴇss:</b> <code>{msg_id - start_id + 1}/{total}</code>\n"
-                        f"✅ <b>ᴏᴋ:</b> <code>{ok}</code> | "
-                        f"❌ <b>ғᴀɪʟᴇᴅ:</b> <code>{fail}</code> | "
-                        f"⏭ <b>sᴋɪᴘᴘᴇᴅ:</b> <code>{skip}</code>",
+                        f"⏳ <b>ᴘʀᴏɢʀᴇss:</b> <code>{msg_id - start_id + 1}/{total}</code>\n"
+                        f"✅ <code>{ok}</code> | ❌ <code>{fail}</code> | ⏭ <code>{skip}</code>",
                         parse_mode=HTML,
                     )
                 except Exception:
@@ -228,12 +225,19 @@ async def forward_cmd(bot: Client, message: Message):
         forward_state.pop(user_id, None)
 
     await status.edit_text(
-        f"✅ <b>ᴅᴏɴᴇ</b>\n"
+        f"✅ <b>ᴅᴏɴᴇ!</b>\n"
         f"✅ <b>ᴏᴋ:</b> <code>{ok}</code> | "
-        f"❌ <b>ғᴀɪʟᴇᴅ:</b> <code>{fail}</code> | "
-        f"⏭ <b>sᴋɪᴘᴘᴇᴅ:</b> <code>{skip}</code>",
+        f"❌ <b>ғᴀɪʟ:</b> <code>{fail}</code> | "
+        f"⏭ <b>sᴋɪᴘ:</b> <code>{skip}</code>",
         parse_mode=HTML,
     )
+
+
+# --------------- Commands (/forward and /batch both work) ---------------
+@Client.on_message(filters.command(["forward", "batch"]) & filters.private)
+async def forward_or_batch_cmd(bot: Client, message: Message):
+    cmd = message.command[0].lower()   # "forward" or "batch"
+    await _run_forward(bot, message, cmd)
 
 
 @Client.on_message(filters.command("stop") & filters.private)
@@ -241,12 +245,12 @@ async def stop_cmd(bot: Client, message: Message):
     user_id = message.from_user.id
     if user_id not in forward_state:
         return await message.reply_text(
-            "ℹ️ <b>ɴᴏ ᴀᴄᴛɪᴠᴇ ғᴏʀᴡᴀʀᴅ ᴛᴀsᴋ.</b>",
+            "ℹ️ <b>ɴᴏ ᴀᴄᴛɪᴠᴇ ᴛᴀsᴋ.</b>",
             parse_mode=HTML,
         )
     forward_state[user_id]["cancel"] = True
     await message.reply_text(
-        "🛑 <b>ᴄᴀɴᴄᴇʟʟɪɴɢ ᴄᴜʀʀᴇɴᴛ ғᴏʀᴡᴀʀᴅ ᴛᴀsᴋ...</b>",
+        "🛑 <b>ᴄᴀɴᴄᴇʟʟɪɴɢ...</b>",
         parse_mode=HTML,
     )
 
@@ -265,17 +269,10 @@ async def _send_one(user_client: Client, msg: Message, dest) -> bool:
 
 
 async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> bool:
-    """
-    Try to copy the album.  Falls back to per-item download+reupload.
-
-    FIX: if get_media_group fails (restricted channel), we no longer set
-    group=[] — instead we keep the anchor message as a single-item fallback
-    so at least that one item is forwarded via _download_reupload.
-    """
     group: list[Message] = []
     captions = None
 
-    # Step 1: try to fetch the full album
+    # Step 1: fetch the full album
     try:
         group    = await user_client.get_media_group(src, anchor_id)
         captions = [
@@ -283,11 +280,10 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
             for item in group
         ]
     except Exception:
-        # get_media_group failed — will use anchor message as single-item fallback
         group    = []
         captions = None
 
-    # Step 2: try copy_media_group (works on non-restricted channels)
+    # Step 2: copy_media_group (non-restricted channels)
     try:
         await user_client.copy_media_group(dest, src, anchor_id, captions=captions)
         return True
@@ -296,7 +292,7 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
     except Exception:
         pass
 
-    # Step 3: fallback — download each album item individually
+    # Step 3: album fetched — download each item individually
     if group:
         any_ok = False
         for item in group:
@@ -305,7 +301,7 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
             await asyncio.sleep(0.5)
         return any_ok
 
-    # Step 4: group fetch also failed — last resort: download the anchor message alone
+    # Step 4: album fetch also failed — download anchor message alone
     try:
         anchor_msg = await user_client.get_messages(src, anchor_id)
         if anchor_msg and not getattr(anchor_msg, "empty", False):
@@ -318,7 +314,6 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
 
 async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
     try:
-        # Pure text
         if msg.text and not msg.media:
             try:
                 await user_client.send_message(
