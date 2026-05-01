@@ -1,106 +1,102 @@
-# Changelog & New Features
-
-## 1. Bot Chat Support (`/forward` + `/batch`)
-
-Bot ke messages directly save karo — restricted bots se bhi.
-
-### Link Formats
-
-| Type | Format | Example |
-|---|---|---|
-| Single bot message | `https://t.me/bot/<botusername>/<msg_id>` | `https://t.me/bot/save_restrict_1bot/8628` |
-| Bot batch (range) | `https://t.me/bot/<botusername>/<first>-<last>` | `https://t.me/bot/save_restrict_1bot/8628-8650` |
-| Private channel | `https://t.me/c/<id>/<start>-<end>` | `https://t.me/c/1234567890/10-200` |
-| Public channel | `https://t.me/<username>/<start>-<end>` | `https://t.me/mychannel/1-500` |
-
-### How to get Bot Message IDs
-
-1. Install **Plus Messenger** (unofficial Telegram client)
-2. Open the bot chat → long-press any message
-3. Message ID will be visible in the options
-
-### Requirements
-
-- Must be logged in (`/login`)
-- Destination must be set in `/settings`
-- The bot must have already sent those messages to you (your own DM history with the bot)
+# Changelog — multi-bot branch
 
 ---
 
-## 2. New Command: `/batch`
+## v3 — Separate Destinations + Bot Chat Filtering + Force-Sub Detection
 
-```
-/batch <link>
-```
+### Settings — Alag Alag Destinations
+- `/forward` aur `/batch` ke liye ab **alag destination set** ho sakta hai
+- `📤 Fwd Dest` button → `/forward` ke liye destination
+- `📦 Batch Dest` button → `/batch` (bot chat save) ke liye destination
+- Agar Batch Dest set nahi → `/batch` apne aap Fwd Dest use karta hai (fallback)
+- `🗑 Rm Fwd Dest` — sirf forward destination hatao
+- `🗑 Rm Batch Dest` — sirf batch destination hatao
+- `📋 List Settings` — dono destinations clearly dikhata hai
 
-Same as `/forward` but labeled separately for clarity.  
-Both `/forward` and `/batch` now support **bot chat links**.
+### Bot Chat — Sirf Bot Ke Messages Save Honge
+- `/batch t.me/bot/...` ke range mein ab **outgoing messages skip** hote hain
+- Outgoing = jo messages aapne bot ko bheje (commands, queries)
+- Sirf bot ke replies/content/files save honge
+- Pehle: range mein sab messages aate the including apne commands
 
-```
-/batch https://t.me/bot/save_restrict_1bot/8628-8650
-/batch https://t.me/c/1234567890/10-200
-/batch https://t.me/channelname/1-500
-```
-
-Use `/stop` to cancel any running task.
+### Force Subscribe Detection — Auto Skip
+- Agar bot ne force subscribe message bheja (join channel/group type), wo automatically **detect aur skip** hoga
+- Detection: message mein join/subscribe words + inline button with `t.me/+` invite link
+- Progress counter mein `skipped` mein count hoga
 
 ---
 
-## 3. Settings Improvements
+## v2 — Bug Fixes
 
-New buttons added in `/settings`:
+### settings.py
+- Double `query.answer()` bug fix — Remove Fwd/Batch Dest toast ab sahi dikhta hai
+- `📦 Batch Dest` button add
+- `📤 Fwd Dest` button — "Set Source" ki jagah (source always link se aata hai)
 
-| Button | Action |
+### logins.py
+- `/logout` command add — seedha type karne par kaam karega
+- `logout` excluded commands mein add — login flow intercept nahi karega
+
+### forward.py
+- `_send_one`: FloodWait ke baad `msg.copy()` ek baar retry hoti hai
+- `_send_media_group`: same retry logic for `copy_media_group()`
+- `_upload_file()`: naya helper — sab media types ke liye FloodWait retry
+- `_download_reupload()`: text messages mein bhi FloodWait retry
+
+---
+
+## v1 — New Features
+
+### Bot Chat Link (`t.me/bot/<username>/<msgid>`)
+- Naya format: `https://t.me/bot/<botusername>/<msgid>[-<msgid>]`
+- `/forward` aur `/batch` dono mein kaam karta hai
+- Plus Messenger (unofficial client) se bot chat message IDs milte hain
+- Login required
+
+### `/batch` Command
+- Alag `batch_dest` setting use karta hai (fallback: fwd dest)
+- Sab link formats support — including bot chat links
+- Start menu mein button add: `📦 Batch / Bot Save`
+- Login flow se exclude
+
+### Auto-Accept — 15 Guna Faster
+- 15 simultaneous approvals — `asyncio.Semaphore(15)`
+- DB save, counters, welcome PM — sab background mein concurrently
+- Koi artificial delay nahi
+
+### Faster Forwarding
+- Loop delay: `1.0s → 0.2s`
+- FloodWait auto-handled
+- Progress har 4 second mein update
+
+---
+
+## Commands
+
+| Command | Kaam |
 |---|---|
-| `🗑 Remove Src` | Remove saved source channel |
-| `🗑 Remove Dest` | Remove saved destination channel |
-| `📋 List Settings` | Show current login/source/dest status |
+| `/login` | Apne Telegram account se sign in |
+| `/logout` | Sign out, session remove |
+| `/cancel` | Login flow cancel |
+| `/forward <link>` | Channel ya bot chat se forward |
+| `/batch <link>` | Bot chat se batch save (alag dest) |
+| `/stop` | Running task cancel |
+| `/settings` | Settings panel kholo |
+| `/approve <chat>` | Sab pending join requests bulk approve |
 
-The old `🧹 Clear Fwd` button (clears both) is removed from main view — use the individual remove buttons instead.
+## Link Formats
 
----
+```
+Private channel:   https://t.me/c/<id>/<start>-<end>
+Public channel:    https://t.me/<username>/<start>-<end>
+Bot chat single:   https://t.me/bot/<botusername>/<msgid>
+Bot chat range:    https://t.me/bot/<botusername>/<start>-<end>
+```
 
-## 4. Commands Menu — New Button
+## Important Notes
 
-In `/start` → Commands menu, a new button **📦 Batch / Bot Save** has been added.
-
-It explains:
-- What bot chat saving is
-- How to get message IDs using Plus Messenger
-- All supported link formats
-- Requirements
-
----
-
-## 5. Faster Auto-Accept
-
-Join requests are now accepted **instantly** using concurrent processing:
-
-- Up to **15 simultaneous approvals** run at the same time (was 1 at a time before)
-- No artificial delay between requests
-- DB saves and welcome PMs run in background — they do NOT block the approval
-- FloodWait is handled with automatic retry (up to 3 attempts per user)
-
----
-
-## 6. Faster Forwarding
-
-Forward/batch speed improved:
-
-- Delay between messages reduced from **1.0s → 0.2s**
-- Media group fallback delay reduced from **0.5s → 0.2s**
-- FloodWait is still respected (automatic sleep when Telegram asks)
-- Progress update interval: every 4 seconds (was 5)
-
----
-
-## File Changes Summary
-
-| File | What changed |
-|---|---|
-| `plugins/forward.py` | Bot chat link parsing, `/batch` command, faster loop (0.2s delay), shared `_run_forward()` function |
-| `plugins/accept.py` | Concurrent approvals (15 semaphore), background DB saves, no artificial delay |
-| `plugins/start.py` | New `📦 Batch / Bot Save` button in commands menu, `BATCH_TEXT` description added |
-| `plugins/settings.py` | Remove Source, Remove Dest, List Settings buttons added |
-| `plugins/logins.py` | `/batch` added to excluded commands in login flow filter |
-| `new.md` | This file |
+- **Bot chat save**: login required. Plus Messenger se message IDs lena padega.
+- **Force subscribe**: source bot agar join channel bole → bot wo message skip karega automatically.
+- **Protected content**: `msg.copy()` fail → bytes directly download → re-upload. Forward restriction se protect nahi hota.
+- **Outgoing skip**: bot chat mode mein apne bheje hue commands skip honge — sirf bot ke responses save honge.
+- **Batch fallback**: `/batch` ke liye agar `batch_dest` set nahi, to `fwd dest` use hoga. Agar dono nahi → error.

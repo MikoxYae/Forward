@@ -4,7 +4,7 @@ import re
 import time
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardMarkup
 from pyrogram.errors import FloodWait
 
 from config import APP_ID, API_HASH
@@ -15,6 +15,29 @@ HTML = enums.ParseMode.HTML
 
 # Per-user forward task state
 forward_state: dict[int, dict] = {}
+
+
+# --------------- Force-subscribe detection ---------------
+def _is_force_sub_msg(msg: Message) -> bool:
+    """Return True if this message looks like a bot's force-subscribe gate.
+
+    Detection: text/caption has join-related keywords AND the inline keyboard
+    contains at least one button with a t.me invite link.
+    """
+    text = (msg.text or msg.caption or "").lower()
+    join_words = ("join", "subscribe", "channel", "group", "member",
+                  "access", "unlock", "watch", "view")
+    if not any(w in text for w in join_words):
+        return False
+    kb = getattr(msg, "reply_markup", None)
+    if not isinstance(kb, InlineKeyboardMarkup):
+        return False
+    for row in kb.inline_keyboard:
+        for btn in row:
+            url = getattr(btn, "url", None) or ""
+            if "t.me/+" in url or "joinchat" in url:
+                return True
+    return False
 
 
 # --------------- Link parsing ---------------
@@ -150,6 +173,16 @@ async def _run_forward(
                 skip += 1
                 continue
 
+            # Bot chat: skip messages sent BY the user (outgoing = commands/queries)
+            if is_bot_chat and getattr(msg, "outgoing", False):
+                skip += 1
+                continue
+
+            # Bot chat: skip force-subscribe gate messages
+            if is_bot_chat and _is_force_sub_msg(msg):
+                skip += 1
+                continue
+
             if msg.media_group_id:
                 if msg.media_group_id in seen_groups:
                     continue
@@ -282,10 +315,14 @@ async def batch_cmd(bot: Client, message: Message):
             parse_mode=HTML,
         )
 
-    dest_raw = await db.get_user_setting(user_id, "destination")
+    # Batch has its own destination; falls back to the shared forward destination.
+    dest_raw = await db.get_user_setting(user_id, "batch_dest")
+    if not dest_raw:
+        dest_raw = await db.get_user_setting(user_id, "destination")
     if not dest_raw:
         return await message.reply_text(
-            "<b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɪs ɴᴏᴛ sᴇᴛ. ᴜsᴇ /settings → sᴇᴛ ᴅᴇsᴛ.</b>",
+            "<b>ʙᴀᴛᴄʜ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɪs ɴᴏᴛ sᴇᴛ.</b>\n"
+            "<b>ᴜsᴇ /settings → 📦 ʙᴀᴛᴄʜ ᴅᴇsᴛ ᴛᴏ sᴇᴛ ɪᴛ.</b>",
             parse_mode=HTML,
         )
 

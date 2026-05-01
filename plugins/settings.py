@@ -138,8 +138,8 @@ def _cancel_kb() -> InlineKeyboardMarkup:
 async def _render_main(bot: Client, user_id: int):
     n_promos = await db.count_user_promos(user_id)
     session = await db.get_session(user_id)
-    src = await db.get_user_setting(user_id, "source")
-    dst = await db.get_user_setting(user_id, "destination")
+    fwd_dst = await db.get_user_setting(user_id, "destination")
+    batch_dst = await db.get_user_setting(user_id, "batch_dest")
 
     limit = "∞" if int(user_id) == int(OWNER_ID) else str(PROMO_PER_USER_LIMIT)
     try:
@@ -148,14 +148,16 @@ async def _render_main(bot: Client, user_id: int):
     except Exception:
         mention = f"<code>{user_id}</code>"
 
+    batch_dst_display = batch_dst or f"<i>(uses fwd dest)</i>" if fwd_dst else "—"
+
     caption = (
         f"<b>🛠 sᴇᴛᴛɪɴɢs</b> · {mention}\n\n"
         f"<b>📣 ᴀᴜᴛᴏ-ᴘʀᴏᴍᴏ</b>\n"
         f"   ᴀᴄᴛɪᴠᴇ: <code>{n_promos}/{limit}</code>\n\n"
-        f"<b>📤 ғᴏʀᴡᴀʀᴅ</b>\n"
-        f"   ʟᴏɢɪɴ: <code>{'yes' if session else 'no'}</code>\n"
-        f"   sᴏᴜʀᴄᴇ: <code>{src or '—'}</code>\n"
-        f"   ᴅᴇsᴛ: <code>{dst or '—'}</code>\n\n"
+        f"<b>📤 ғᴏʀᴡᴀʀᴅ / ʙᴀᴛᴄʜ</b>\n"
+        f"   ʟᴏɢɪɴ:       <code>{'✅ yes' if session else '❌ no'}</code>\n"
+        f"   ғᴡᴅ ᴅᴇsᴛ:   <code>{fwd_dst or '—'}</code>\n"
+        f"   ʙᴀᴛᴄʜ ᴅᴇsᴛ: {batch_dst_display}\n\n"
         f"<b>📥 ᴡᴇʟᴄᴏᴍᴇ ᴘᴍ</b>\n"
         f"   sᴇᴛ ᴘᴇʀ ᴄʜᴀɴɴᴇʟ ᴡɪᴛʜ /setwelcome ɪɴ ᴛʜᴀᴛ ᴄʜᴀᴛ.\n\n"
         f"<b>ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ.</b>"
@@ -167,12 +169,12 @@ async def _render_main(bot: Client, user_id: int):
             InlineKeyboardButton("📋 ᴍʏ ᴘʀᴏᴍᴏs", callback_data="set:promos"),
         ],
         [
-            InlineKeyboardButton("📤 sᴇᴛ sᴏᴜʀᴄᴇ", callback_data="set:src"),
-            InlineKeyboardButton("📥 sᴇᴛ ᴅᴇsᴛ", callback_data="set:dst"),
+            InlineKeyboardButton("📤 ғᴡᴅ ᴅᴇsᴛ", callback_data="set:dst"),
+            InlineKeyboardButton("📦 ʙᴀᴛᴄʜ ᴅᴇsᴛ", callback_data="set:batch_dst"),
         ],
         [
-            InlineKeyboardButton("🗑 ʀᴇᴍᴏᴠᴇ sʀᴄ", callback_data="set:rm_src"),
-            InlineKeyboardButton("🗑 ʀᴇᴍᴏᴠᴇ ᴅᴇsᴛ", callback_data="set:rm_dst"),
+            InlineKeyboardButton("🗑 ʀᴍ ғᴡᴅ ᴅᴇsᴛ", callback_data="set:rm_dst"),
+            InlineKeyboardButton("🗑 ʀᴍ ʙᴀᴛᴄʜ ᴅᴇsᴛ", callback_data="set:rm_batch"),
         ],
         [
             InlineKeyboardButton("📋 ʟɪsᴛ sᴇᴛᴛɪɴɢs", callback_data="set:fwd_list"),
@@ -642,10 +644,29 @@ async def cb_set_dst(bot: Client, query: CallbackQuery):
     await query.answer()
     await _prompt(
         bot, user_id,
-        "<b>📥 sᴇᴛ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ᴄʜᴀɴɴᴇʟ</b>\n\n"
-        "<b>sᴇɴᴅ ᴛʜᴇ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ @ᴜsᴇʀɴᴀᴍᴇ.</b>\n\n"
+        "<b>📤 sᴇᴛ ғᴏʀᴡᴀʀᴅ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ</b>\n\n"
+        "<b>ᴜsᴇᴅ ʙʏ:</b> <code>/forward</code>\n\n"
+        "<b>sᴇɴᴅ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ @ᴜsᴇʀɴᴀᴍᴇ.</b>\n"
         "<b>ᴇxᴀᴍᴘʟᴇ:</b> <code>@mychannel</code> ᴏʀ <code>-1001234567890</code>",
         awaiting="set_dest",
+    )
+
+
+@Client.on_callback_query(filters.regex(r"^set:batch_dst$"))
+async def cb_set_batch_dst(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    await query.answer()
+    await _prompt(
+        bot, user_id,
+        "<b>📦 sᴇᴛ ʙᴀᴛᴄʜ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ</b>\n\n"
+        "<b>ᴜsᴇᴅ ʙʏ:</b> <code>/batch</code> (ʙᴏᴛ ᴄʜᴀᴛ sᴀᴠᴇ)\n\n"
+        "<b>sᴇɴᴅ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ @ᴜsᴇʀɴᴀᴍᴇ.</b>\n"
+        "<b>ᴇxᴀᴍᴘʟᴇ:</b> <code>@savedfiles</code> ᴏʀ <code>-1001234567890</code>\n\n"
+        "<i>ɪғ ɴᴏᴛ sᴇᴛ, /batch ᴡɪʟʟ ᴜsᴇ ᴛʜᴇ ғᴡᴅ ᴅᴇsᴛ ᴀs ғᴀʟʟʙᴀᴄᴋ.</i>",
+        awaiting="set_batch_dest",
     )
 
 
@@ -702,7 +723,7 @@ async def cb_rm_src(bot: Client, query: CallbackQuery):
     await _render_main(bot, user_id)
 
 
-# ---------------- remove destination ----------------
+# ---------------- remove forward destination ----------------
 @Client.on_callback_query(filters.regex(r"^set:rm_dst$"))
 async def cb_rm_dst(bot: Client, query: CallbackQuery):
     user_id = query.from_user.id
@@ -714,12 +735,33 @@ async def cb_rm_dst(bot: Client, query: CallbackQuery):
         await query.answer()
         await _edit_panel(
             bot, user_id,
-            "<b>📥 ᴅᴇsᴛɪɴᴀᴛɪᴏɴ</b>\n\n<b>ɴᴏ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɪs sᴇᴛ.</b>",
+            "<b>📤 ғᴡᴅ ᴅᴇsᴛ</b>\n\n<b>ɴᴏᴛ sᴇᴛ.</b>",
             _back_kb(),
         )
         return
     await db.clear_user_setting(user_id, "destination")
-    await query.answer("ᴅᴇsᴛ ʀᴇᴍᴏᴠᴇᴅ ✅")
+    await query.answer("ғᴡᴅ ᴅᴇsᴛ ʀᴇᴍᴏᴠᴇᴅ ✅")
+    await _render_main(bot, user_id)
+
+
+# ---------------- remove batch destination ----------------
+@Client.on_callback_query(filters.regex(r"^set:rm_batch$"))
+async def cb_rm_batch(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    dst = await db.get_user_setting(user_id, "batch_dest")
+    if not dst:
+        await query.answer()
+        await _edit_panel(
+            bot, user_id,
+            "<b>📦 ʙᴀᴛᴄʜ ᴅᴇsᴛ</b>\n\n<b>ɴᴏᴛ sᴇᴛ. /batch ᴜsᴇs ғᴡᴅ ᴅᴇsᴛ ᴀs ғᴀʟʟʙᴀᴄᴋ.</b>",
+            _back_kb(),
+        )
+        return
+    await db.clear_user_setting(user_id, "batch_dest")
+    await query.answer("ʙᴀᴛᴄʜ ᴅᴇsᴛ ʀᴇᴍᴏᴠᴇᴅ ✅")
     await _render_main(bot, user_id)
 
 
@@ -732,17 +774,24 @@ async def cb_fwd_list(bot: Client, query: CallbackQuery):
     settings_state[user_id]["panel_msg_id"] = query.message.id
     await query.answer()
 
-    src = await db.get_user_setting(user_id, "source")
-    dst = await db.get_user_setting(user_id, "destination")
+    fwd_dst = await db.get_user_setting(user_id, "destination")
+    batch_dst = await db.get_user_setting(user_id, "batch_dest")
     session = await db.get_session(user_id)
+
+    batch_line = (
+        f"<code>{batch_dst}</code>"
+        if batch_dst
+        else f"<i>not set — uses fwd dest</i>"
+    )
 
     await _edit_panel(
         bot, user_id,
-        "<b>📋 ᴄᴜʀʀᴇɴᴛ ғᴏʀᴡᴀʀᴅ sᴇᴛᴛɪɴɢs</b>\n\n"
-        f"<b>ʟᴏɢɪɴ:</b> <code>{'✅ yes' if session else '❌ no'}</code>\n"
-        f"<b>sᴏᴜʀᴄᴇ:</b> <code>{src or '—  not set'}</code>\n"
-        f"<b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ:</b> <code>{dst or '—  not set'}</code>\n\n"
-        "<b>ᴜsᴇ ʙᴜᴛᴛᴏɴs ᴛᴏ ᴄʜᴀɴɢᴇ sᴇᴛᴛɪɴɢs.</b>",
+        "<b>📋 ᴄᴜʀʀᴇɴᴛ sᴇᴛᴛɪɴɢs</b>\n\n"
+        f"<b>ʟᴏɢɪɴ:</b>       <code>{'✅ yes' if session else '❌ no'}</code>\n"
+        f"<b>ғᴡᴅ ᴅᴇsᴛ:</b>   <code>{fwd_dst or '— not set'}</code>\n"
+        f"<b>ʙᴀᴛᴄʜ ᴅᴇsᴛ:</b> {batch_line}\n\n"
+        "<b>ɴᴏᴛᴇ:</b> /forward ᴜsᴇs <b>ғᴡᴅ ᴅᴇsᴛ</b>.\n"
+        "/batch ᴜsᴇs <b>ʙᴀᴛᴄʜ ᴅᴇsᴛ</b> (ᴏʀ ғᴡᴅ ᴅᴇsᴛ ɪғ ɴᴏᴛ sᴇᴛ).",
         _back_kb(),
     )
 
@@ -858,6 +907,8 @@ async def settings_capture(bot: Client, message: Message):
             await _handle_set_fwd(bot, user_id, message, "source")
         elif awaiting == "set_dest":
             await _handle_set_fwd(bot, user_id, message, "destination")
+        elif awaiting == "set_batch_dest":
+            await _handle_set_fwd(bot, user_id, message, "batch_dest")
     finally:
         raise StopPropagation
 
