@@ -368,19 +368,66 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
     return any_ok
 
 
+async def _upload_file(user_client: Client, msg: Message, dest, path: str, caption) -> bool:
+    """Upload a local file to dest. Handles FloodWait with one retry."""
+    async def _do_upload():
+        if msg.photo:
+            return await user_client.send_photo(dest, path, caption=caption, parse_mode=HTML)
+        if msg.video:
+            return await user_client.send_video(
+                dest, path, caption=caption, parse_mode=HTML,
+                duration=msg.video.duration, width=msg.video.width, height=msg.video.height,
+            )
+        if msg.animation:
+            return await user_client.send_animation(dest, path, caption=caption, parse_mode=HTML)
+        if msg.audio:
+            return await user_client.send_audio(
+                dest, path, caption=caption, parse_mode=HTML,
+                duration=msg.audio.duration, performer=msg.audio.performer, title=msg.audio.title,
+            )
+        if msg.voice:
+            return await user_client.send_voice(
+                dest, path, caption=caption, parse_mode=HTML, duration=msg.voice.duration,
+            )
+        if msg.video_note:
+            return await user_client.send_video_note(dest, path, duration=msg.video_note.duration)
+        if msg.sticker:
+            return await user_client.send_sticker(dest, path)
+        if msg.document:
+            return await user_client.send_document(
+                dest, path, caption=caption, parse_mode=HTML, file_name=msg.document.file_name,
+            )
+        return await user_client.send_document(dest, path, caption=caption, parse_mode=HTML)
+
+    for attempt in range(2):
+        try:
+            await _do_upload()
+            return True
+        except FloodWait as e:
+            await asyncio.sleep(e.value + 1)
+        except Exception:
+            return False
+    return False
+
+
 async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
     try:
+        # Text-only messages (no media, no download needed)
         if msg.text and not msg.media:
-            try:
-                await user_client.send_message(
-                    dest,
-                    f"<b>{msg.text.html}</b>",
-                    parse_mode=HTML,
-                    disable_web_page_preview=True,
-                )
-                return True
-            except Exception:
-                return False
+            for attempt in range(2):
+                try:
+                    await user_client.send_message(
+                        dest,
+                        f"<b>{msg.text.html}</b>",
+                        parse_mode=HTML,
+                        disable_web_page_preview=True,
+                    )
+                    return True
+                except FloodWait as e:
+                    await asyncio.sleep(e.value + 1)
+                except Exception:
+                    return False
+            return False
 
         caption = _bold_caption(msg)
         path = await user_client.download_media(msg)
@@ -388,35 +435,7 @@ async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
             return False
 
         try:
-            if msg.photo:
-                await user_client.send_photo(dest, path, caption=caption, parse_mode=HTML)
-            elif msg.video:
-                await user_client.send_video(
-                    dest, path, caption=caption, parse_mode=HTML,
-                    duration=msg.video.duration, width=msg.video.width, height=msg.video.height,
-                )
-            elif msg.animation:
-                await user_client.send_animation(dest, path, caption=caption, parse_mode=HTML)
-            elif msg.audio:
-                await user_client.send_audio(
-                    dest, path, caption=caption, parse_mode=HTML,
-                    duration=msg.audio.duration, performer=msg.audio.performer, title=msg.audio.title,
-                )
-            elif msg.voice:
-                await user_client.send_voice(
-                    dest, path, caption=caption, parse_mode=HTML, duration=msg.voice.duration,
-                )
-            elif msg.video_note:
-                await user_client.send_video_note(dest, path, duration=msg.video_note.duration)
-            elif msg.sticker:
-                await user_client.send_sticker(dest, path)
-            elif msg.document:
-                await user_client.send_document(
-                    dest, path, caption=caption, parse_mode=HTML, file_name=msg.document.file_name,
-                )
-            else:
-                await user_client.send_document(dest, path, caption=caption, parse_mode=HTML)
-            return True
+            return await _upload_file(user_client, msg, dest, path, caption)
         finally:
             try:
                 os.remove(path)
