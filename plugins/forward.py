@@ -12,119 +12,141 @@ from database.db import db
 
 HTML = enums.ParseMode.HTML
 
-# Per-user forward task state
-forward_state: dict[int, dict] = {}
-
-# How many message IDs to fetch in one API call.
-# Telegram allows up to 200 per messages.GetMessages request.
+# Fetch this many message IDs per API call (Telegram max = 200)
 FETCH_BATCH = 200
+
+# Per-user running task: {user_id: {cancel, ok, fail, skip, processed, total, src, dest}}
+forward_state: dict[int, dict] = {}
 
 # --------------- Link parsing ---------------
 # Private channel  : https://t.me/c/<id>/<start>[-<end>]
 # Public channel   : https://t.me/<username>/<start>[-<end>]
 # Bot direct link  : https://t.me/bot/<username>/<start>[-<end>]
 PRIVATE_RE = re.compile(r"https?://t\.me/c/(\d+)/(\d+)(?:[-/](\d+))?/?$")
-PUBLIC_RE  = re.compile(r"https?://t\.me/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
 BOT_RE     = re.compile(r"https?://t\.me/bot/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
+PUBLIC_RE  = re.compile(r"https?://t\.me/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
 
 def parse_link(url: str):
-    """Return (chat_id_or_username, start_id, end_id) or None."""
     url = url.strip()
-
     m = PRIVATE_RE.match(url)
     if m:
-        chat  = int("-100" + m.group(1))
-        start = int(m.group(2))
-        end   = int(m.group(3)) if m.group(3) else start
-        return chat, start, end
-
-    # Bot link must be checked BEFORE public so "bot" prefix is caught
-    m = BOT_RE.match(url)
+        return int("-100" + m.group(1)), int(m.group(2)), int(m.group(3) or m.group(2))
+    m = BOT_RE.match(url)          # must be before PUBLIC_RE
     if m:
-        chat  = m.group(1)
-        start = int(m.group(2))
-        end   = int(m.group(3)) if m.group(3) else start
-        return chat, start, end
-
+        return m.group(1), int(m.group(2)), int(m.group(3) or m.group(2))
     m = PUBLIC_RE.match(url)
     if m:
-        chat  = m.group(1)
-        start = int(m.group(2))
-        end   = int(m.group(3)) if m.group(3) else start
-        return chat, start, end
-
+        return m.group(1), int(m.group(2)), int(m.group(3) or m.group(2))
     return None
 
-def _resolve_dest(dest_raw: str):
+def _resolve_dest(raw: str):
     try:
-        return int(dest_raw)
+        return int(raw)
     except (ValueError, TypeError):
-        return dest_raw
+        return raw
 
 def _bold_caption(msg: Message) -> str | None:
-    if not msg.caption:
-        return None
-    return f"<b>{msg.caption.html}</b>"
+    return f"<b>{msg.caption.html}</b>" if msg.caption else None
 
-def _get_sender_username(msg: Message) -> str | None:
+def _sender_username(msg: Message) -> str | None:
     if msg.from_user and msg.from_user.username:
         return msg.from_user.username.lower()
     if msg.sender_chat and msg.sender_chat.username:
         return msg.sender_chat.username.lower()
     return None
 
-def _get_sender_id(msg: Message) -> int | None:
+def _sender_id(msg: Message) -> int | None:
     if msg.from_user:
         return msg.from_user.id
     if msg.sender_chat:
         return msg.sender_chat.id
     return None
 
-def _sender_allowed(msg: Message, source_username: str | None, source_id: int | None) -> bool:
-    if source_id is not None and source_username is None:
+def _sender_ok(msg: Message, src_uname: str | None, src_id: int | None) -> bool:
+    # Private numeric channel — every message belongs to it
+    if src_id is not None and src_uname is None:
         return True
-    msg_username = _get_sender_username(msg)
-    msg_id       = _get_sender_id(msg)
-    if source_username and msg_username:
-        return msg_username == source_username
-    if source_id and msg_id:
-        return msg_id == source_id
+    mu = _sender_username(msg)
+    mi = _sender_id(msg)
+    if src_uname and mu:
+        return mu == src_uname
+    if src_id and mi:
+        return mi == src_id
     return True
 
 
-# --------------- Shared handler ---------------
+# --------------- /status ---------------
+@Client.on_message(filters.command("status") & filters.private)
+async def status_cmd(bot: Client, message: Message):
+    user_id = message.from_user.id
+    state = forward_state.get(user_id)
+    if not state:
+        return await message.reply_text(
+            "ℹ️ <b>ɴᴏ ᴀᴄᴛɪᴠᴇ ᴛᴀsᴋ ʀɪɢʜᴛ ɴᴏᴡ.</b>",
+            parse_mode=HTML,
+        )
+    processed = state.get("processed", 0)
+    total     = state.get("total", 0)
+    ok        = state.get("ok", 0)
+    fail      = state.get("fail", 0)
+    skip      = state.get("skip", 0)
+    src       = state.get("src", "?")
+    dest      = state.get("dest", "?")
+    pct       = round(processed / total * 100, 1) if total else 0
+    await message.reply_text(
+        f"📊 <b>ᴄᴜʀʀᴇɴᴛ ᴛᴀsᴋ sᴛᴀᴛᴜs</b>\n\n"
+        f"📥 <b>sᴏᴜʀᴄᴇ:</b> <code>{src}</code>\n"
+        f"📤 <b>ᴅᴇsᴛ:</b> <code>{dest}</code>\n\n"
+        f"⏳ <b>ᴘʀᴏɢʀᴇss:</b> <code>{processed}/{total}</code> (<code>{pct}%</code>)\n"
+        f"✅ <b>sᴇɴᴛ:</b> <code>{ok}</code>\n"
+        f"❌ <b>ғᴀɪʟ:</b> <code>{fail}</code>\n"
+        f"⏭ <b>sᴋɪᴘ:</b> <code>{skip}</code>\n\n"
+        f"<b>sᴇɴᴅ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ.</b>",
+        parse_mode=HTML,
+    )
+
+
+# --------------- /stop ---------------
+@Client.on_message(filters.command("stop") & filters.private)
+async def stop_cmd(bot: Client, message: Message):
+    user_id = message.from_user.id
+    if user_id not in forward_state:
+        return await message.reply_text("ℹ️ <b>ɴᴏ ᴀᴄᴛɪᴠᴇ ᴛᴀsᴋ.</b>", parse_mode=HTML)
+    forward_state[user_id]["cancel"] = True
+    await message.reply_text("🛑 <b>ᴄᴀɴᴄᴇʟʟɪɴɢ...</b>", parse_mode=HTML)
+
+
+# --------------- Shared handler (/forward + /batch) ---------------
 async def _run_forward(bot: Client, message: Message, cmd_name: str):
     user_id = message.from_user.id
 
     if len(message.command) < 2:
         return await message.reply_text(
             f"⚡ <b>ᴜsᴀɢᴇ:</b> <code>/{cmd_name} &lt;link&gt;</code>\n\n"
-            "📌 <b>ᴇxᴀᴍᴘʟᴇs:</b>\n"
-            f"<code>/{cmd_name} https://t.me/c/1234567890/2-100</code>\n"
-            f"<code>/{cmd_name} https://t.me/channelname/5-50</code>\n"
-            f"<code>/{cmd_name} https://t.me/bot/Basic_need2bot/102130-134653</code>",
+            "📌 <b>sᴜᴘᴘᴏʀᴛᴇᴅ ʟɪɴᴋs:</b>\n"
+            "<code>https://t.me/c/1234567890/2-100</code>\n"
+            "<code>https://t.me/channelname/5-50</code>\n"
+            "<code>https://t.me/bot/Basic_need2bot/102130-134653</code>",
             parse_mode=HTML,
         )
 
     if forward_state.get(user_id):
         return await message.reply_text(
-            "⚠️ <b>ᴀ ᴛᴀsᴋ ɪs ᴀʟʀᴇᴀᴅʏ ʀᴜɴɴɪɴɢ. ᴜsᴇ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ ɪᴛ ғɪʀsᴛ.</b>",
+            "⚠️ <b>ᴀ ᴛᴀsᴋ ɪs ᴀʟʀᴇᴀᴅʏ ʀᴜɴɴɪɴɢ.</b>\n"
+            "<b>sᴇɴᴅ /status ᴛᴏ ᴄʜᴇᴄᴋ ᴘʀᴏɢʀᴇss ᴏʀ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ.</b>",
             parse_mode=HTML,
         )
 
     session_string = await db.get_session(user_id)
     if not session_string:
         return await message.reply_text(
-            "🔐 <b>ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ʟᴏɢɢᴇᴅ ɪɴ. ᴜsᴇ /login ғɪʀsᴛ.</b>",
-            parse_mode=HTML,
-        )
+            "🔐 <b>ɴᴏᴛ ʟᴏɢɢᴇᴅ ɪɴ. ᴜsᴇ /login ғɪʀsᴛ.</b>", parse_mode=HTML)
 
     dest_raw = await db.get_user_setting(user_id, "destination")
     if not dest_raw:
         return await message.reply_text(
-            "📭 <b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɪs ɴᴏᴛ sᴇᴛ. ᴜsᴇ /setdest &lt;ᴄʜᴀɴɴᴇʟ&gt;.</b>",
-            parse_mode=HTML,
-        )
+            "📭 <b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɴᴏᴛ sᴇᴛ. ᴜsᴇ /setdest &lt;ᴄʜᴀɴɴᴇʟ&gt;.</b>",
+            parse_mode=HTML)
 
     parsed = parse_link(message.command[1])
     if not parsed:
@@ -134,8 +156,7 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
             "<code>https://t.me/c/&lt;id&gt;/&lt;start&gt;-&lt;end&gt;</code>\n"
             "<code>https://t.me/&lt;username&gt;/&lt;start&gt;-&lt;end&gt;</code>\n"
             "<code>https://t.me/bot/&lt;username&gt;/&lt;start&gt;-&lt;end&gt;</code>",
-            parse_mode=HTML,
-        )
+            parse_mode=HTML)
 
     src, start_id, end_id = parsed
     if end_id < start_id:
@@ -144,18 +165,28 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
     dest  = _resolve_dest(dest_raw)
     total = end_id - start_id + 1
 
-    source_username: str | None = src if isinstance(src, str) else None
-    source_id: int | None       = src if isinstance(src, int) else None
+    src_uname: str | None = src if isinstance(src, str) else None
+    src_id:    int | None = src if isinstance(src, int) else None
 
-    forward_state[user_id] = {"cancel": False}
+    # Initialise state — /status reads from here
+    forward_state[user_id] = {
+        "cancel":    False,
+        "ok":        0,
+        "fail":      0,
+        "skip":      0,
+        "processed": 0,
+        "total":     total,
+        "src":       src,
+        "dest":      dest,
+    }
 
-    status = await message.reply_text(
+    status_msg = await message.reply_text(
         f"🚀 <b>sᴛᴀʀᴛɪɴɢ...</b>\n"
-        f"📥 <b>sᴏᴜʀᴄᴇ:</b> <code>{src}</code>\n"
-        f"📤 <b>ᴅᴇsᴛ:</b> <code>{dest}</code>\n"
+        f"📥 <b>sʀᴄ:</b> <code>{src}</code>\n"
+        f"📤 <b>ᴅsᴛ:</b> <code>{dest}</code>\n"
         f"🔢 <b>ʀᴀɴɢᴇ:</b> <code>{start_id}</code> → <code>{end_id}</code> "
         f"(<code>{total}</code> <b>ᴍsɢs</b>)\n\n"
-        f"⏹ <b>ᴜsᴇ /stop ᴛᴏ ᴄᴀɴᴄᴇʟ.</b>",
+        f"💡 <b>/status ᴛᴏ ᴄʜᴇᴄᴋ ᴀɴʏᴛɪᴍᴇ · /stop ᴛᴏ ᴄᴀɴᴄᴇʟ</b>",
         parse_mode=HTML,
     )
 
@@ -170,32 +201,29 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
         await user_client.start()
     except Exception as e:
         forward_state.pop(user_id, None)
-        return await status.edit_text(
-            f"❌ <b>sᴇssɪᴏɴ ᴇʀʀᴏʀ:</b> <code>{e}</code>",
-            parse_mode=HTML,
-        )
+        return await status_msg.edit_text(
+            f"❌ <b>sᴇssɪᴏɴ ᴇʀʀᴏʀ:</b> <code>{e}</code>", parse_mode=HTML)
 
     try:
         user_client.parse_mode = HTML
     except Exception:
         pass
 
-    ok = fail = skip = 0
-    seen_groups: set[str] = set()
-    last_edit = 0.0
-    processed = 0
-
-    all_ids = list(range(start_id, end_id + 1))
+    state       = forward_state[user_id]
+    seen_groups : set[str] = set()
+    last_edit   = 0.0
+    all_ids     = list(range(start_id, end_id + 1))
 
     try:
-        # ── Fetch FETCH_BATCH message IDs per API call instead of one by one ──
+        # ── STEP: fetch FETCH_BATCH IDs → send all → fetch next batch ──
         for chunk_start in range(0, len(all_ids), FETCH_BATCH):
-            if forward_state.get(user_id, {}).get("cancel"):
+
+            if state.get("cancel"):
                 break
 
             chunk = all_ids[chunk_start : chunk_start + FETCH_BATCH]
 
-            # One API call for up to 200 IDs — dramatically fewer FloodWaits
+            # ── 1. Fetch this chunk (one API call for up to 200 IDs) ──
             try:
                 msgs = await user_client.get_messages(src, chunk)
             except FloodWait as e:
@@ -203,31 +231,30 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
                 try:
                     msgs = await user_client.get_messages(src, chunk)
                 except Exception:
-                    fail += len(chunk)
-                    processed += len(chunk)
+                    state["fail"]      += len(chunk)
+                    state["processed"] += len(chunk)
                     continue
             except Exception:
-                fail += len(chunk)
-                processed += len(chunk)
+                state["fail"]      += len(chunk)
+                state["processed"] += len(chunk)
                 continue
 
-            # msgs may come back in any order or as a single Message — normalise
             if isinstance(msgs, Message):
                 msgs = [msgs]
 
+            # ── 2. Send every message in this chunk to destination ──
             for msg in msgs:
-                if forward_state.get(user_id, {}).get("cancel"):
+                if state.get("cancel"):
                     break
 
-                processed += 1
+                state["processed"] += 1
 
                 if not msg or getattr(msg, "empty", False) or msg.service:
-                    skip += 1
+                    state["skip"] += 1
                     continue
 
-                # Sender filter
-                if not _sender_allowed(msg, source_username, source_id):
-                    skip += 1
+                if not _sender_ok(msg, src_uname, src_id):
+                    state["skip"] += 1
                     continue
 
                 if msg.media_group_id:
@@ -235,62 +262,58 @@ async def _run_forward(bot: Client, message: Message, cmd_name: str):
                         continue
                     seen_groups.add(msg.media_group_id)
                     if await _send_media_group(user_client, src, msg.id, dest):
-                        ok += 1
+                        state["ok"] += 1
                     else:
-                        fail += 1
+                        state["fail"] += 1
                 else:
                     if await _send_one(user_client, msg, dest):
-                        ok += 1
+                        state["ok"] += 1
                     else:
-                        fail += 1
+                        state["fail"] += 1
 
                 await asyncio.sleep(0.5)
 
+                # Update status message every 5 seconds
                 now = time.time()
                 if now - last_edit > 5:
+                    pct = round(state["processed"] / total * 100, 1)
                     try:
-                        await status.edit_text(
-                            f"⏳ <b>ᴘʀᴏɢʀᴇss:</b> <code>{processed}/{total}</code>\n"
-                            f"✅ <code>{ok}</code> | ❌ <code>{fail}</code> | ⏭ <code>{skip}</code>",
+                        await status_msg.edit_text(
+                            f"⏳ <b>ᴘʀᴏɢʀᴇss:</b> <code>{state['processed']}/{total}</code> "
+                            f"(<code>{pct}%</code>)\n"
+                            f"✅ <code>{state['ok']}</code> | "
+                            f"❌ <code>{state['fail']}</code> | "
+                            f"⏭ <code>{state['skip']}</code>",
                             parse_mode=HTML,
                         )
                     except Exception:
                         pass
                     last_edit = now
 
+            # ── 3. Done with this chunk — move to next 200 ──
+
     finally:
         try:
             await user_client.stop()
         except Exception:
             pass
+        ok   = state.get("ok",   0)
+        fail = state.get("fail", 0)
+        skip = state.get("skip", 0)
         forward_state.pop(user_id, None)
 
-    await status.edit_text(
-        f"✅ <b>ᴅᴏɴᴇ!</b>\n"
-        f"✅ <b>ᴏᴋ:</b> <code>{ok}</code> | "
-        f"❌ <b>ғᴀɪʟ:</b> <code>{fail}</code> | "
-        f"⏭ <b>sᴋɪᴘ:</b> <code>{skip}</code>",
+    await status_msg.edit_text(
+        f"✅ <b>ᴅᴏɴᴇ!</b>\n\n"
+        f"✅ <b>sᴇɴᴛ:</b>  <code>{ok}</code>\n"
+        f"❌ <b>ғᴀɪʟ:</b>  <code>{fail}</code>\n"
+        f"⏭ <b>sᴋɪᴘ:</b>  <code>{skip}</code>",
         parse_mode=HTML,
     )
 
 
-# --------------- Commands (/forward and /batch both work) ---------------
 @Client.on_message(filters.command(["forward", "batch"]) & filters.private)
 async def forward_or_batch_cmd(bot: Client, message: Message):
-    cmd = message.command[0].lower()
-    await _run_forward(bot, message, cmd)
-
-
-@Client.on_message(filters.command("stop") & filters.private)
-async def stop_cmd(bot: Client, message: Message):
-    user_id = message.from_user.id
-    if user_id not in forward_state:
-        return await message.reply_text(
-            "ℹ️ <b>ɴᴏ ᴀᴄᴛɪᴠᴇ ᴛᴀsᴋ.</b>",
-            parse_mode=HTML,
-        )
-    forward_state[user_id]["cancel"] = True
-    await message.reply_text("🛑 <b>ᴄᴀɴᴄᴇʟʟɪɴɢ...</b>", parse_mode=HTML)
+    await _run_forward(bot, message, message.command[0].lower())
 
 
 # --------------- Internals ---------------
@@ -320,6 +343,7 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
         group    = []
         captions = None
 
+    # Try copy_media_group first (non-restricted)
     try:
         await user_client.copy_media_group(dest, src, anchor_id, captions=captions)
         return True
@@ -328,6 +352,7 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
     except Exception:
         pass
 
+    # Fallback A: download each album item individually
     if group:
         any_ok = False
         for item in group:
@@ -336,7 +361,7 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
             await asyncio.sleep(0.5)
         return any_ok
 
-    # Last resort — anchor message alone
+    # Fallback B: album fetch also failed — download anchor alone
     try:
         anchor_msg = await user_client.get_messages(src, anchor_id)
         if anchor_msg and not getattr(anchor_msg, "empty", False):
@@ -352,11 +377,8 @@ async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
         if msg.text and not msg.media:
             try:
                 await user_client.send_message(
-                    dest,
-                    f"<b>{msg.text.html}</b>",
-                    parse_mode=HTML,
-                    disable_web_page_preview=True,
-                )
+                    dest, f"<b>{msg.text.html}</b>",
+                    parse_mode=HTML, disable_web_page_preview=True)
                 return True
             except Exception:
                 return False
@@ -373,23 +395,18 @@ async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
                 await user_client.send_video(
                     dest, path, caption=caption, parse_mode=HTML,
                     duration=msg.video.duration,
-                    width=msg.video.width,
-                    height=msg.video.height,
-                )
+                    width=msg.video.width, height=msg.video.height)
             elif msg.animation:
                 await user_client.send_animation(dest, path, caption=caption, parse_mode=HTML)
             elif msg.audio:
                 await user_client.send_audio(
                     dest, path, caption=caption, parse_mode=HTML,
                     duration=msg.audio.duration,
-                    performer=msg.audio.performer,
-                    title=msg.audio.title,
-                )
+                    performer=msg.audio.performer, title=msg.audio.title)
             elif msg.voice:
                 await user_client.send_voice(
                     dest, path, caption=caption, parse_mode=HTML,
-                    duration=msg.voice.duration,
-                )
+                    duration=msg.voice.duration)
             elif msg.video_note:
                 await user_client.send_video_note(dest, path, duration=msg.video_note.duration)
             elif msg.sticker:
@@ -397,8 +414,7 @@ async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
             elif msg.document:
                 await user_client.send_document(
                     dest, path, caption=caption, parse_mode=HTML,
-                    file_name=msg.document.file_name,
-                )
+                    file_name=msg.document.file_name)
             else:
                 await user_client.send_document(dest, path, caption=caption, parse_mode=HTML)
             return True
