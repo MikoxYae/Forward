@@ -16,29 +16,23 @@ HTML = enums.ParseMode.HTML
 forward_state: dict[int, dict] = {}
 
 # --------------- Link parsing ---------------
-# Private channel: https://t.me/c/<id>/<start>[-<end>]
-# Public channel:  https://t.me/<username>/<start>[-<end>]
 PRIVATE_RE = re.compile(r"https?://t\.me/c/(\d+)/(\d+)(?:[-/](\d+))?/?$")
 PUBLIC_RE  = re.compile(r"https?://t\.me/([a-zA-Z][\w\d_]{3,})/(\d+)(?:[-/](\d+))?/?$")
 
 def parse_link(url: str):
-    """Return (chat_id_or_username, start_id, end_id) or None."""
     url = url.strip()
-
     m = PRIVATE_RE.match(url)
     if m:
         chat  = int("-100" + m.group(1))
         start = int(m.group(2))
         end   = int(m.group(3)) if m.group(3) else start
         return chat, start, end
-
     m = PUBLIC_RE.match(url)
     if m:
         chat  = m.group(1)
         start = int(m.group(2))
         end   = int(m.group(3)) if m.group(3) else start
         return chat, start, end
-
     return None
 
 def _resolve_dest(dest_raw: str):
@@ -48,14 +42,11 @@ def _resolve_dest(dest_raw: str):
         return dest_raw
 
 def _bold_caption(msg: Message) -> str | None:
-    """Return msg caption wrapped in <b>...</b> with HTML entities preserved,
-    or None if there is no caption."""
     if not msg.caption:
         return None
     return f"<b>{msg.caption.html}</b>"
 
 def _get_sender_username(msg: Message) -> str | None:
-    """Return lowercase username of the sender, or None."""
     if msg.from_user and msg.from_user.username:
         return msg.from_user.username.lower()
     if msg.sender_chat and msg.sender_chat.username:
@@ -63,7 +54,6 @@ def _get_sender_username(msg: Message) -> str | None:
     return None
 
 def _get_sender_id(msg: Message) -> int | None:
-    """Return numeric ID of the sender (user or chat)."""
     if msg.from_user:
         return msg.from_user.id
     if msg.sender_chat:
@@ -71,32 +61,16 @@ def _get_sender_id(msg: Message) -> int | None:
     return None
 
 def _sender_allowed(msg: Message, source_username: str | None, source_id: int | None) -> bool:
-    """
-    Return True only when the message was sent by the same entity as the
-    source channel/bot we are pulling from.
-
-    source_username — lowercased username extracted from the /forward link
-                      (None for private numeric-ID channels)
-    source_id       — numeric chat id of the source
-                      (always set for private channels, may be None for public)
-    """
-    # Private channel by numeric ID — every message belongs to that channel,
-    # no extra sender filter needed.
+    # Private numeric-ID channel — all messages belong to it, no filter needed
     if source_id is not None and source_username is None:
         return True
-
     msg_username = _get_sender_username(msg)
     msg_id       = _get_sender_id(msg)
-
-    # Match by username first
     if source_username and msg_username:
         return msg_username == source_username
-
-    # Fallback: match by numeric id
     if source_id and msg_id:
         return msg_id == source_id
-
-    return True   # can't determine — let it through
+    return True
 
 # --------------- Commands ---------------
 @Client.on_message(filters.command("forward") & filters.private)
@@ -149,7 +123,6 @@ async def forward_cmd(bot: Client, message: Message):
     dest  = _resolve_dest(dest_raw)
     total = end_id - start_id + 1
 
-    # Determine source username (for public bots/channels) and source id (for private)
     source_username: str | None = src if isinstance(src, str) else None
     source_id: int | None       = src if isinstance(src, int) else None
 
@@ -212,12 +185,10 @@ async def forward_cmd(bot: Client, message: Message):
                 skip += 1
                 continue
 
-            # ── SENDER FILTER ──────────────────────────────────────────────
-            # Skip messages that were NOT sent by the source bot/channel.
+            # Sender filter — skip messages not from source bot/channel
             if not _sender_allowed(msg, source_username, source_id):
                 skip += 1
                 continue
-            # ──────────────────────────────────────────────────────────────
 
             if msg.media_group_id:
                 if msg.media_group_id in seen_groups:
@@ -282,10 +253,7 @@ async def stop_cmd(bot: Client, message: Message):
 
 # --------------- Internals ---------------
 async def _send_one(user_client: Client, msg: Message, dest) -> bool:
-    """Try copy → download+reupload. Captions are wrapped in <b>...</b>."""
     bold = _bold_caption(msg)
-
-    # 1) Copy (fresh send, no forward tag)
     try:
         await msg.copy(dest, caption=bold, parse_mode=HTML)
         return True
@@ -293,13 +261,21 @@ async def _send_one(user_client: Client, msg: Message, dest) -> bool:
         await asyncio.sleep(e.value + 1)
     except Exception:
         pass
-
-    # 2) Download + re-upload (works for restricted/protected content)
     return await _download_reupload(user_client, msg, dest)
 
 
 async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> bool:
-    """Copy a whole album with bold captions. Falls back to per-item download."""
+    """
+    Try to copy the album.  Falls back to per-item download+reupload.
+
+    FIX: if get_media_group fails (restricted channel), we no longer set
+    group=[] — instead we keep the anchor message as a single-item fallback
+    so at least that one item is forwarded via _download_reupload.
+    """
+    group: list[Message] = []
+    captions = None
+
+    # Step 1: try to fetch the full album
     try:
         group    = await user_client.get_media_group(src, anchor_id)
         captions = [
@@ -307,9 +283,11 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
             for item in group
         ]
     except Exception:
+        # get_media_group failed — will use anchor message as single-item fallback
         group    = []
         captions = None
 
+    # Step 2: try copy_media_group (works on non-restricted channels)
     try:
         await user_client.copy_media_group(dest, src, anchor_id, captions=captions)
         return True
@@ -318,17 +296,27 @@ async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> b
     except Exception:
         pass
 
-    # Fallback: download each item individually
-    any_ok = False
-    for item in group:
-        if await _download_reupload(user_client, item, dest):
-            any_ok = True
-        await asyncio.sleep(0.5)
-    return any_ok
+    # Step 3: fallback — download each album item individually
+    if group:
+        any_ok = False
+        for item in group:
+            if await _download_reupload(user_client, item, dest):
+                any_ok = True
+            await asyncio.sleep(0.5)
+        return any_ok
+
+    # Step 4: group fetch also failed — last resort: download the anchor message alone
+    try:
+        anchor_msg = await user_client.get_messages(src, anchor_id)
+        if anchor_msg and not getattr(anchor_msg, "empty", False):
+            return await _download_reupload(user_client, anchor_msg, dest)
+    except Exception:
+        pass
+
+    return False
 
 
 async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
-    """Last-resort: pull media bytes and re-upload as a fresh message."""
     try:
         # Pure text
         if msg.text and not msg.media:
