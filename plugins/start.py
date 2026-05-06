@@ -6,7 +6,7 @@ from pyrogram.types import (
     InlineKeyboardButton,
 )
 
-from config import OWNER, START_PIC
+from config import OWNER, OWNER_ID, START_PIC
 from database.db import db
 
 
@@ -23,6 +23,19 @@ START_TEXT = (
     "<b>• ᴀᴜᴛᴏ-ᴘᴏsᴛ ᴘʀᴏᴍᴏs ᴏɴ ᴀ sᴄʜᴇᴅᴜʟᴇ — ᴅᴇʟᴇᴛᴇ ᴏʟᴅ, ʀᴇ-ᴘᴏsᴛ ɴᴇᴡ ᴇᴠᴇʀʏ X ᴍɪɴ.</b>\n\n"
     "<b>ᴛᴀᴘ ᴄᴏᴍᴍᴀɴᴅs ʙᴇʟᴏᴡ ᴛᴏ sᴇᴇ ʜᴏᴡ ᴇᴀᴄʜ ғᴇᴀᴛᴜʀᴇ ᴡᴏʀᴋs.</b>"
 )
+
+START_TEXT_USER = (
+    "<b>ʜᴇʟʟᴏ</b> {mention}\n\n"
+    "<b>🤖 ᴀᴜᴛᴏ ᴀᴄᴄᴇᴘᴛ ɪs ᴀᴄᴛɪᴠᴇ.</b>\n\n"
+    "<i>ʏᴏᴜ ᴡɪʟʟ ʙᴇ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴀᴄᴄᴇᴘᴛᴇᴅ ɪɴᴛᴏ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ɢʀᴏᴜᴘs.\n"
+    "ᴜsᴇ /settings ᴛᴏ ᴛᴜʀɴ ɪᴛ ᴏɴ ᴏʀ ᴏFF.</i>"
+)
+
+
+async def _is_privileged(user_id: int) -> bool:
+    if int(user_id) == int(OWNER_ID):
+        return True
+    return await db.is_admin(user_id)
 
 
 COMMANDS_MENU_TEXT = (
@@ -135,6 +148,15 @@ def start_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def start_keyboard_user() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⚙ sᴇᴛᴛɪɴɢs", callback_data="set:open")],
+            [InlineKeyboardButton("ᴏᴡɴᴇʀ", url=f"https://t.me/{OWNER}")],
+        ]
+    )
+
+
 def commands_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -203,48 +225,67 @@ async def _edit_screen(query: CallbackQuery, caption: str, keyboard: InlineKeybo
 
 @Client.on_message(filters.command(["start", "help"]) & filters.private)
 async def start_cmd(client: Client, message: Message):
-    await db.add_user(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.first_name,
-    )
+    user = message.from_user
+    await db.add_user(user.id, user.username, user.first_name)
+
+    privileged = await _is_privileged(user.id)
+    caption = (START_TEXT if privileged else START_TEXT_USER).format(mention=user.mention)
+    keyboard = start_keyboard() if privileged else start_keyboard_user()
+
     await message.reply_photo(
         photo=START_PIC,
-        caption=START_TEXT.format(mention=message.from_user.mention),
+        caption=caption,
         parse_mode=HTML,
-        reply_markup=start_keyboard(),
+        reply_markup=keyboard,
     )
 
 
 @Client.on_callback_query(filters.regex("^back_start$"))
 async def back_to_start(client: Client, query: CallbackQuery):
-    await _edit_screen(
-        query,
-        START_TEXT.format(mention=query.from_user.mention),
-        start_keyboard(),
+    user_id = query.from_user.id
+    privileged = await _is_privileged(user_id)
+    caption = (START_TEXT if privileged else START_TEXT_USER).format(
+        mention=query.from_user.mention
     )
+    keyboard = start_keyboard() if privileged else start_keyboard_user()
+    await _edit_screen(query, caption, keyboard)
 
 
 @Client.on_callback_query(filters.regex("^show_commands$"))
 async def show_commands(client: Client, query: CallbackQuery):
+    if not await _is_privileged(query.from_user.id):
+        await query.answer("⛔ ᴀᴄᴄᴇss ᴅᴇɴɪᴇᴅ", show_alert=True)
+        return
     await _edit_screen(query, COMMANDS_MENU_TEXT, commands_keyboard())
 
 
 @Client.on_callback_query(filters.regex("^show_accept$"))
 async def show_accept(client: Client, query: CallbackQuery):
+    if not await _is_privileged(query.from_user.id):
+        await query.answer("⛔ ᴀᴄᴄᴇss ᴅᴇɴɪᴇᴅ", show_alert=True)
+        return
     await _edit_screen(query, ACCEPT_TEXT, back_to_commands_keyboard())
 
 
 @Client.on_callback_query(filters.regex("^show_forward$"))
 async def show_forward(client: Client, query: CallbackQuery):
+    if not await _is_privileged(query.from_user.id):
+        await query.answer("⛔ ᴀᴄᴄᴇss ᴅᴇɴɪᴇᴅ", show_alert=True)
+        return
     await _edit_screen(query, FORWARD_TEXT, back_to_commands_keyboard())
 
 
 @Client.on_callback_query(filters.regex("^show_promo$"))
 async def show_promo(client: Client, query: CallbackQuery):
+    if not await _is_privileged(query.from_user.id):
+        await query.answer("⛔ ᴀᴄᴄᴇss ᴅᴇɴɪᴇᴅ", show_alert=True)
+        return
     await _edit_screen(query, PROMO_TEXT, back_to_commands_keyboard())
 
 
 @Client.on_callback_query(filters.regex("^show_batch$"))
 async def show_batch(client: Client, query: CallbackQuery):
+    if not await _is_privileged(query.from_user.id):
+        await query.answer("⛔ ᴀᴄᴄᴇss ᴅᴇɴɪᴇᴅ", show_alert=True)
+        return
     await _edit_screen(query, BATCH_TEXT, back_to_commands_keyboard())
