@@ -15,6 +15,7 @@ class Database:
         self.chats = self.db["chats"]
         self.settings = self.db["settings"]
         self.promos = self.db["promos"]
+        self.admins = self.db["admins"]
 
     # ---------------- USERS ----------------
     async def add_user(self, user_id: int, username: str | None = None,
@@ -172,8 +173,6 @@ class Database:
     async def count_user_promos(self, owner_id: int) -> int:
         return await self.promos.count_documents({"owner_id": int(owner_id)})
 
-
-
     # ---------------- RESUME (batch progress) ----------------
     async def save_resume(self, user_id: int, src: str, dest: str,
                           start_id: int, end_id: int, last_id: int):
@@ -193,5 +192,27 @@ class Database:
 
     async def clear_resume(self, user_id: int):
         await self.settings.delete_one({"_id": f"resume:{user_id}"})
+
+    # ---------------- ADMINS ----------------
+    async def add_admin(self, user_id: int):
+        await self.admins.update_one(
+            {"_id": user_id},
+            {"$setOnInsert": {"added_at": datetime.utcnow()}},
+            upsert=True,
+        )
+
+    async def remove_admin(self, user_id: int):
+        await self.admins.delete_one({"_id": user_id})
+
+    async def is_admin(self, user_id: int) -> bool:
+        doc = await self.admins.find_one({"_id": user_id})
+        return doc is not None
+
+    def get_admins(self):
+        return self.admins.find({})
+
+    async def total_admins(self) -> int:
+        return await self.admins.count_documents({})
+
 
 db = Database(MONGO_URI, DB_NAME)
