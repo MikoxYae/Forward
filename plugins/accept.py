@@ -88,7 +88,14 @@ async def auto_accept(bot: Client, request: ChatJoinRequest):
     # Save chat to DB (non-blocking, fire-and-forget)
     asyncio.create_task(_save_chat(chat))
 
-    # Approve immediately — no delay, no waiting for DB
+    # Respect the requesting user's Auto Accept preference.
+    # If they have explicitly turned it OFF in /settings, skip approval.
+    user_pref = await db.get_user_setting(user.id, "auto_accept_enabled")
+    if user_pref is False:
+        log.info(f"auto_accept skipped for {user.id} (user opted out)")
+        return
+
+    # Approve immediately — no delay
     approved = await _do_approve(bot, chat.id, user.id)
     if not approved:
         return
