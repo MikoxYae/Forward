@@ -6,6 +6,7 @@ import time
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
+from pyrogram.raw import functions as raw_fn, types as raw_types
 
 from config import APP_ID, API_HASH
 from database.db import db
@@ -304,34 +305,60 @@ async def _run_forward_range(bot: Client, message: Message,
         pass
 
     # ── PEER RESOLVE: in-memory sessions have empty peer cache ──
-    # For private channels (int IDs), Pyrogram needs access_hash which
-    # is only known after the peer appears in dialogs. Iterate until found.
+    # Pyrogram needs the channel's access_hash to use a numeric ID.
+    # A fresh in-memory session has no cache, so we resolve in 3 steps.
     if isinstance(src, int):
         try:
             await status_msg.edit_text(
-                f"🔍 <b>ʀᴇsᴏʟᴠɪɴɢ ᴄʜᴀɴɴᴇʟ ᴘᴇᴇʀ...</b>\n"
-                f"<i>(ᴏɴʟʏ ɴᴇᴇᴅᴇᴅ ᴏɴᴄᴇ ᴘᴇʀ sᴇssɪᴏɴ)</i>",
+                f"🔍 <b>ʀᴇsᴏʟᴠɪɴɢ ᴄʜᴀɴɴᴇʟ...</b>",
                 parse_mode=HTML,
             )
         except Exception:
             pass
+
+        # Raw channel_id without the -100 prefix (e.g. 3836137666)
+        raw_ch_id = abs(src) - 10 ** 12
+
         peer_resolved = False
+        resolve_err: str | None = None
+
+        # ── Step 1: direct get_chat (works if peer already cached) ──
         try:
-            # Try direct resolve first (works if peer was already seen)
             await user_client.get_chat(src)
             peer_resolved = True
         except Exception:
             pass
 
+        # ── Step 2: raw GetChannels with access_hash=0 ──
+        # Telegram accepts this when the user is a participant of the channel.
         if not peer_resolved:
-            # Walk dialogs until we find the channel and cache its access_hash
+            try:
+                result = await user_client.invoke(
+                    raw_fn.channels.GetChannels(
+                        id=[raw_types.InputChannel(
+                            channel_id=raw_ch_id,
+                            access_hash=0,
+                        )]
+                    )
+                )
+                if result and getattr(result, "chats", None):
+                    peer_resolved = True
+            except Exception as e:
+                resolve_err = f"raw GetChannels: {type(e).__name__}: {e}"
+
+        # ── Step 3: walk ALL dialogs (definitive membership check) ──
+        if not peer_resolved:
+            dialogs_seen = 0
             try:
                 async for dialog in user_client.iter_dialogs():
-                    if dialog.chat.id == src:
+                    dialogs_seen += 1
+                    cid = dialog.chat.id
+                    # Match by full ID (-1003836137666) or raw ID (3836137666)
+                    if cid == src or cid == raw_ch_id or abs(cid) - 10 ** 12 == raw_ch_id:
                         peer_resolved = True
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                resolve_err = f"iter_dialogs: {type(e).__name__}: {e}"
 
         if not peer_resolved:
             forward_state.pop(user_id, None)
@@ -339,11 +366,14 @@ async def _run_forward_range(bot: Client, message: Message,
                 await user_client.stop()
             except Exception:
                 pass
+            err_detail = f"\n<code>{resolve_err}</code>" if resolve_err else ""
             return await status_msg.edit_text(
-                f"❌ <b>ᴄʜᴀɴɴᴇʟ ɴᴏᴛ ғᴏᴜɴᴅ ɪɴ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ</b>\n\n"
-                f"🔑 <b>ʏᴏᴜʀ ʟᴏɢɢᴇᴅ-ɪɴ ᴀᴄᴄᴏᴜɴᴛ ɪs ɴᴏᴛ ᴀ ᴍᴇᴍʙᴇʀ ᴏғ ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ.</b>\n"
-                f"ᴊᴏɪɴ ɪᴛ ɪɴ ᴛᴇʟᴇɢʀᴀᴍ ᴡɪᴛʜ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ, ᴛʜᴇɴ ʀᴇᴛʀʏ.\n\n"
-                f"⚠️ <b>ʙᴏᴛ ᴅᴏᴇs ɴᴏᴛ ɴᴇᴇᴅ ᴛᴏ ʙᴇ ᴀᴅᴍɪɴ ɪɴ sᴏᴜʀᴄᴇ.</b>",
+                f"❌ <b>ᴄᴀɴɴᴏᴛ ʀᴇsᴏʟᴠᴇ ᴄʜᴀɴɴᴇʟ</b>{err_detail}\n\n"
+                f"🔑 <b>ʏᴏᴜʀ ʟᴏɢɢᴇᴅ-ɪɴ ᴀᴄᴄᴏᴜɴᴛ ɪs ɴᴏᴛ ᴀ ᴍᴇᴍʙᴇʀ ᴏғ ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ, "
+                f"ᴏʀ sᴏᴍᴇᴛʜɪɴɢ ʙʟᴏᴄᴋᴇᴅ ᴛʜᴇ ʟᴏᴏᴋᴜᴘ.</b>\n\n"
+                f"<b>ᴛʀʏ:</b>\n"
+                f"• ᴊᴏɪɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ɪɴ ᴛᴇʟᴇɢʀᴀᴍ ᴡɪᴛʜ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ\n"
+                f"• /logout ᴀɴᴅ /login ᴀɢᴀɪɴ ᴛᴏ ʀᴇғʀᴇsʜ sᴇssɪᴏɴ",
                 parse_mode=HTML,
             )
 
