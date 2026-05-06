@@ -20,9 +20,10 @@ log = logging.getLogger("miko.broadcast")
 
 @Client.on_message(filters.command("broadcast") & filters.private)
 async def broadcast_cmd(bot: Client, message: Message):
-    if message.from_user.id != OWNER_ID:
+    user_id = message.from_user.id
+    if int(user_id) != int(OWNER_ID) and not await db.is_admin(user_id):
         return await message.reply_text(
-            "<b>ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ɪs ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴛᴏ ᴛʜᴇ ᴏᴡɴᴇʀ.</b>",
+            "<b>ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ɪs ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴛᴏ ᴛʜᴇ ᴏᴡɴᴇʀ ᴀɴᴅ ᴀᴅᴍɪɴs.</b>",
             parse_mode=HTML,
         )
 
