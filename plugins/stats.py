@@ -10,20 +10,23 @@ HTML = enums.ParseMode.HTML
 
 @Client.on_message(filters.command("stats") & filters.private)
 async def stats_cmd(bot: Client, message: Message):
-    if message.from_user.id != OWNER_ID:
+    user_id = message.from_user.id
+    if int(user_id) != int(OWNER_ID) and not await db.is_admin(user_id):
         return await message.reply_text(
-            "<b>ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ɪs ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴛᴏ ᴛʜᴇ ᴏᴡɴᴇʀ.</b>",
+            "<b>ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ɪs ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴛᴏ ᴛʜᴇ ᴏᴡɴᴇʀ ᴀɴᴅ ᴀᴅᴍɪɴs.</b>",
             parse_mode=HTML,
         )
 
     total_users = await db.total_users()
     total_chats = await db.total_chats()
+    total_admins = await db.total_admins()
     approved_total = await db.get_counter("approved_total")
 
     await message.reply_text(
         "<b>ʙᴏᴛ sᴛᴀᴛɪsᴛɪᴄs</b>\n\n"
         f"<b>ᴜsᴇʀs:</b> <code>{total_users}</code>\n"
         f"<b>ᴄʜᴀᴛs:</b> <code>{total_chats}</code>\n"
+        f"<b>ᴀᴅᴍɪɴs:</b> <code>{total_admins}</code>\n"
         f"<b>ᴛᴏᴛᴀʟ ʀᴇǫᴜᴇsᴛs ᴀᴄᴄᴇᴘᴛᴇᴅ:</b> <code>{approved_total}</code>",
         parse_mode=HTML,
     )
@@ -31,9 +34,10 @@ async def stats_cmd(bot: Client, message: Message):
 
 @Client.on_message(filters.command("chats") & filters.private)
 async def chats_cmd(bot: Client, message: Message):
-    if message.from_user.id != OWNER_ID:
+    user_id = message.from_user.id
+    if int(user_id) != int(OWNER_ID) and not await db.is_admin(user_id):
         return await message.reply_text(
-            "<b>ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ɪs ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴛᴏ ᴛʜᴇ ᴏᴡɴᴇʀ.</b>",
+            "<b>ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ɪs ʀᴇsᴛʀɪᴄᴛᴇᴅ ᴛᴏ ᴛʜᴇ ᴏᴡɴᴇʀ ᴀɴᴅ ᴀᴅᴍɪɴs.</b>",
             parse_mode=HTML,
         )
 
