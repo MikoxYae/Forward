@@ -163,7 +163,7 @@ async def _render_main(bot: Client, user_id: int):
         f"<b>ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ.</b>"
     )
 
-    kb = InlineKeyboardMarkup([
+    _kb_rows = [
         [
             InlineKeyboardButton("➕ ɴᴇᴡ ᴘʀᴏᴍᴏ", callback_data="set:promo_new"),
             InlineKeyboardButton("📋 ᴍʏ ᴘʀᴏᴍᴏs", callback_data="set:promos"),
@@ -180,11 +180,16 @@ async def _render_main(bot: Client, user_id: int):
             InlineKeyboardButton("📋 ʟɪsᴛ sᴇᴛᴛɪɴɢs", callback_data="set:fwd_list"),
             InlineKeyboardButton("🚪 ʟᴏɢᴏᴜᴛ", callback_data="set:logout"),
         ],
-        [
-            InlineKeyboardButton("🔑 ʟᴏɢɪɴ ʜᴇʟᴘ", callback_data="set:login_help"),
-            InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="set:close"),
-        ],
+    ]
+    if int(user_id) == int(OWNER_ID):
+        _kb_rows.append(
+            [InlineKeyboardButton("👮 ᴀᴅᴍɪɴs", callback_data="set:admins")]
+        )
+    _kb_rows.append([
+        InlineKeyboardButton("🔑 ʟᴏɢɪɴ ʜᴇʟᴘ", callback_data="set:login_help"),
+        InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="set:close"),
     ])
+    kb = InlineKeyboardMarkup(_kb_rows)
 
     state = settings_state.setdefault(user_id, {})
     state["screen"] = "main"
@@ -292,6 +297,49 @@ async def _render_promo_detail(bot: Client, user_id: int, promo_id: int,
 
     state = settings_state.setdefault(user_id, {})
     state["screen"] = f"promo:{promo_id}"
+    state["awaiting"] = None
+    state["ctx"] = {}
+    await _edit_panel(bot, user_id, caption, kb)
+
+
+
+# ---------------- admins screen ----------------
+async def _render_admins(bot: Client, user_id: int, note: str | None = None):
+    """Owner-only: show the admin management panel."""
+    admins = []
+    async for a in db.get_admins():
+        admins.append(a)
+
+    if admins:
+        lines = [f"<b>👮 ᴀᴅᴍɪɴs</b> (<code>{len(admins)}</code>)\n"]
+        for a in admins:
+            aid = a["_id"]
+            try:
+                u = await bot.get_users(aid)
+                name = u.first_name or str(aid)
+                un = f" @{u.username}" if u.username else ""
+            except Exception:
+                name = str(aid)
+                un = ""
+            lines.append(f"• <code>{aid}</code> — <b>{name}</b>{un}")
+        caption = "\n".join(lines)
+    else:
+        caption = "<b>👮 ᴀᴅᴍɪɴs</b>\n\n<b>ɴᴏ ᴀᴅᴍɪɴs ʏᴇᴛ.</b>"
+
+    if note:
+        caption += f"\n\n{note}"
+
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ ᴀᴅᴅ", callback_data="set:admin_add"),
+            InlineKeyboardButton("➖ ʀᴇᴍᴏᴠᴇ", callback_data="set:admin_remove"),
+            InlineKeyboardButton("📋 ʟɪsᴛ", callback_data="set:admin_list"),
+        ],
+        [InlineKeyboardButton("⬅️ ʙᴀᴄᴋ", callback_data="set:main")],
+    ])
+
+    state = settings_state.setdefault(user_id, {})
+    state["screen"] = "admins"
     state["awaiting"] = None
     state["ctx"] = {}
     await _edit_panel(bot, user_id, caption, kb)
@@ -859,6 +907,72 @@ async def cb_login_help(bot: Client, query: CallbackQuery):
     )
 
 
+
+
+# ---------------- admin management callbacks ----------------
+@Client.on_callback_query(filters.regex(r"^set:admins$"))
+async def cb_admins(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    if int(user_id) != int(OWNER_ID):
+        await query.answer("ᴏᴡɴᴇʀ ᴏɴʟʏ", show_alert=True)
+        return
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    await query.answer()
+    await _render_admins(bot, user_id)
+
+
+@Client.on_callback_query(filters.regex(r"^set:admin_add$"))
+async def cb_admin_add(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    if int(user_id) != int(OWNER_ID):
+        await query.answer("ᴏᴡɴᴇʀ ᴏɴʟʏ", show_alert=True)
+        return
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    await query.answer()
+    await _prompt(
+        bot, user_id,
+        "<b>👮 ᴀᴅᴅ ᴀᴅᴍɪɴ</b>\n\n"
+        "<b>sᴇɴᴅ ᴛʜᴇ ᴜsᴇʀ ɪᴅ ᴛᴏ ɢʀᴀɴᴛ ᴀᴅᴍɪɴ ᴀᴄᴄᴇss.</b>\n\n"
+        "<b>ᴇxᴀᴍᴘʟᴇ:</b> <code>123456789</code>",
+        awaiting="admin_add",
+    )
+
+
+@Client.on_callback_query(filters.regex(r"^set:admin_remove$"))
+async def cb_admin_remove(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    if int(user_id) != int(OWNER_ID):
+        await query.answer("ᴏᴡɴᴇʀ ᴏɴʟʏ", show_alert=True)
+        return
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    await query.answer()
+    await _prompt(
+        bot, user_id,
+        "<b>👮 ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ</b>\n\n"
+        "<b>sᴇɴᴅ ᴛʜᴇ ᴜsᴇʀ ɪᴅ ᴛᴏ ʀᴇᴍᴏᴠᴇ ᴀᴅᴍɪɴ ᴀᴄᴄᴇss.</b>\n\n"
+        "<b>ᴇxᴀᴍᴘʟᴇ:</b> <code>123456789</code>",
+        awaiting="admin_remove",
+    )
+
+
+@Client.on_callback_query(filters.regex(r"^set:admin_list$"))
+async def cb_admin_list(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    if int(user_id) != int(OWNER_ID):
+        await query.answer("ᴏᴡɴᴇʀ ᴏɴʟʏ", show_alert=True)
+        return
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    await query.answer()
+    await _render_admins(bot, user_id)
+
 # ------------------------------------------------------------------
 # Capture user input while the panel is awaiting something.
 # Runs at group=-2 so it fires *before* promo's capture (-1) and
@@ -909,6 +1023,10 @@ async def settings_capture(bot: Client, message: Message):
             await _handle_set_fwd(bot, user_id, message, "destination")
         elif awaiting == "set_batch_dest":
             await _handle_set_fwd(bot, user_id, message, "batch_dest")
+        elif awaiting == "admin_add":
+            await _handle_admin_add(bot, user_id, message)
+        elif awaiting == "admin_remove":
+            await _handle_admin_remove(bot, user_id, message)
     finally:
         raise StopPropagation
 
@@ -1075,3 +1193,53 @@ async def _handle_set_fwd(bot: Client, user_id: int, message: Message,
         return
     await db.set_user_setting(user_id, key, text)
     await _render_main(bot, user_id)
+
+async def _handle_admin_add(bot: Client, user_id: int, message: Message):
+    text = (message.text or "").strip()
+    try:
+        target_id = int(text)
+    except ValueError:
+        await _prompt(
+            bot, user_id,
+            "<b>❌ ɪɴᴠᴀʟɪᴅ ᴜsᴇʀ ɪᴅ. sᴇɴᴅ ᴀ ɴᴜᴍᴇʀɪᴄ ɪᴅ.</b>\n\n"
+            "<b>ᴇxᴀᴍᴘʟᴇ:</b> <code>123456789</code>",
+            awaiting="admin_add",
+        )
+        return
+    if target_id == int(OWNER_ID):
+        await _render_admins(
+            bot, user_id,
+            note="<b>ℹ️ ᴏᴡɴᴇʀ ɪs ᴀʟʀᴇᴀᴅʏ ᴛʜᴇ ʙᴏss — ɴᴏ ɴᴇᴇᴅ ᴛᴏ ᴀᴅᴅ.</b>",
+        )
+        return
+    await db.add_admin(target_id)
+    await _render_admins(
+        bot, user_id,
+        note=f"<b>✅ <code>{target_id}</code> ᴀᴅᴅᴇᴅ ᴀs ᴀᴅᴍɪɴ.</b>",
+    )
+
+
+async def _handle_admin_remove(bot: Client, user_id: int, message: Message):
+    text = (message.text or "").strip()
+    try:
+        target_id = int(text)
+    except ValueError:
+        await _prompt(
+            bot, user_id,
+            "<b>❌ ɪɴᴠᴀʟɪᴅ ᴜsᴇʀ ɪᴅ. sᴇɴᴅ ᴀ ɴᴜᴍᴇʀɪᴄ ɪᴅ.</b>\n\n"
+            "<b>ᴇxᴀᴍᴘʟᴇ:</b> <code>123456789</code>",
+            awaiting="admin_remove",
+        )
+        return
+    already = await db.is_admin(target_id)
+    if not already:
+        await _render_admins(
+            bot, user_id,
+            note=f"<b>ℹ️ <code>{target_id}</code> ɪs ɴᴏᴛ ᴀɴ ᴀᴅᴍɪɴ.</b>",
+        )
+        return
+    await db.remove_admin(target_id)
+    await _render_admins(
+        bot, user_id,
+        note=f"<b>✅ <code>{target_id}</code> ʀᴇᴍᴏᴠᴇᴅ ғʀᴏᴍ ᴀᴅᴍɪɴs.</b>",
+    )
