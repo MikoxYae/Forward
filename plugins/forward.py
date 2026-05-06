@@ -226,10 +226,17 @@ async def forward_or_batch_cmd(bot: Client, message: Message):
     if end_id < start_id:
         start_id, end_id = end_id, start_id
 
-    dest_raw = await db.get_user_setting(user_id, "destination")
+    cmd = message.command[0].lower()
+    if cmd == "batch":
+        dest_raw = await db.get_user_setting(user_id, "batch_dest") or \
+                   await db.get_user_setting(user_id, "destination")
+    else:
+        dest_raw = await db.get_user_setting(user_id, "destination")
+
     if not dest_raw:
         return await message.reply_text(
-            "📭 <b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɴᴏᴛ sᴇᴛ. ᴜsᴇ /setdest &lt;ᴄʜᴀɴɴᴇʟ&gt;.</b>",
+            "📭 <b>ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ɴᴏᴛ sᴇᴛ.</b>\n"
+            "<b>ᴜsᴇ /setdest ᴏʀ ᴏᴘᴇɴ /settings ᴘᴀɴᴇʟ.</b>",
             parse_mode=HTML)
 
     await _run_forward_range(bot, message, src, dest_raw, start_id, end_id)
