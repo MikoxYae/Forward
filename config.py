@@ -1,20 +1,25 @@
 import os
+import sys
 
-MONGO_URI = os.environ.get(
-    "MONGO_URI",
-    "mongodb+srv://Payal:Aloksingh@payal.jv2kwch.mongodb.net/?appName=Payal",
-)
-DB_NAME = os.environ.get("DATABASE_NAME", "Anything")
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8717980062:AAGf3y0VFNtxUE0vQdYVkgI4CQrBPW6_zAU")
+def _require(key: str) -> str:
+    val = os.environ.get(key, "").strip()
+    if not val:
+        print(f"[ERROR] Required environment variable '{key}' is not set.", file=sys.stderr)
+        sys.exit(1)
+    return val
 
-APP_ID = int(os.environ.get("APP_ID", "28614709"))
-API_HASH = os.environ.get("API_HASH", "f36fd2ee6e3d3a17c4d244ff6dc1bac8")
 
-OWNER = os.environ.get("OWNER", "Anythingbutnew56")
-OWNER_ID = int(os.environ.get("OWNER_ID", "8229041976"))
+MONGO_URI  = _require("MONGO_URI")
+BOT_TOKEN  = _require("BOT_TOKEN")
+API_HASH   = _require("API_HASH")
+APP_ID     = int(_require("APP_ID"))
+OWNER_ID   = int(_require("OWNER_ID"))
+OWNER      = _require("OWNER")
 
-START_PIC = os.environ.get(
+DB_NAME    = os.environ.get("DATABASE_NAME", "Forward")
+
+START_PIC  = os.environ.get(
     "START_PIC",
     "https://graph.org/file/b4864a63946e9b1e84238-ccb51f7ec7e7c11458.jpg",
 )
