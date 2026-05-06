@@ -303,12 +303,55 @@ async def _run_forward_range(bot: Client, message: Message,
     except Exception:
         pass
 
-    # ── PRE-FLIGHT: verify source access & dest write permission ──
+    # ── PEER RESOLVE: in-memory sessions have empty peer cache ──
+    # For private channels (int IDs), Pyrogram needs access_hash which
+    # is only known after the peer appears in dialogs. Iterate until found.
+    if isinstance(src, int):
+        try:
+            await status_msg.edit_text(
+                f"🔍 <b>ʀᴇsᴏʟᴠɪɴɢ ᴄʜᴀɴɴᴇʟ ᴘᴇᴇʀ...</b>\n"
+                f"<i>(ᴏɴʟʏ ɴᴇᴇᴅᴇᴅ ᴏɴᴄᴇ ᴘᴇʀ sᴇssɪᴏɴ)</i>",
+                parse_mode=HTML,
+            )
+        except Exception:
+            pass
+        peer_resolved = False
+        try:
+            # Try direct resolve first (works if peer was already seen)
+            await user_client.get_chat(src)
+            peer_resolved = True
+        except Exception:
+            pass
+
+        if not peer_resolved:
+            # Walk dialogs until we find the channel and cache its access_hash
+            try:
+                async for dialog in user_client.iter_dialogs():
+                    if dialog.chat.id == src:
+                        peer_resolved = True
+                        break
+            except Exception:
+                pass
+
+        if not peer_resolved:
+            forward_state.pop(user_id, None)
+            try:
+                await user_client.stop()
+            except Exception:
+                pass
+            return await status_msg.edit_text(
+                f"❌ <b>ᴄʜᴀɴɴᴇʟ ɴᴏᴛ ғᴏᴜɴᴅ ɪɴ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ</b>\n\n"
+                f"🔑 <b>ʏᴏᴜʀ ʟᴏɢɢᴇᴅ-ɪɴ ᴀᴄᴄᴏᴜɴᴛ ɪs ɴᴏᴛ ᴀ ᴍᴇᴍʙᴇʀ ᴏғ ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ.</b>\n"
+                f"ᴊᴏɪɴ ɪᴛ ɪɴ ᴛᴇʟᴇɢʀᴀᴍ ᴡɪᴛʜ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ, ᴛʜᴇɴ ʀᴇᴛʀʏ.\n\n"
+                f"⚠️ <b>ʙᴏᴛ ᴅᴏᴇs ɴᴏᴛ ɴᴇᴇᴅ ᴛᴏ ʙᴇ ᴀᴅᴍɪɴ ɪɴ sᴏᴜʀᴄᴇ.</b>",
+                parse_mode=HTML,
+            )
+
+    # ── PRE-FLIGHT: verify we can actually read from source ──
     try:
         test_msg = await user_client.get_messages(src, start_id)
         if test_msg is None or getattr(test_msg, "empty", False):
-            # Message is empty but channel is accessible — that's fine
-            pass
+            pass  # empty message is fine — channel is accessible
     except Exception as e:
         forward_state.pop(user_id, None)
         try:
@@ -317,16 +360,14 @@ async def _run_forward_range(bot: Client, message: Message,
             pass
         err_name = type(e).__name__
         hint = (
-            "🔑 <b>ʏᴏᴜʀ ʟᴏɢɢᴇᴅ-ɪɴ ᴀᴄᴄᴏᴜɴᴛ ɪs ɴᴏᴛ ᴀ ᴍᴇᴍʙᴇʀ ᴏғ ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ.</b>\n"
-            "ᴊᴏɪɴ ᴛʜᴇ sᴏᴜʀᴄᴇ ᴄʜᴀɴɴᴇʟ ᴡɪᴛʜ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ ɪɴ ᴛᴇʟᴇɢʀᴀᴍ, ᴛʜᴇɴ ʀᴇᴛʀʏ.\n\n"
+            "🔑 <b>ʏᴏᴜʀ ʟᴏɢɢᴇᴅ-ɪɴ ᴀᴄᴄᴏᴜɴᴛ ᴄᴀɴɴᴏᴛ ʀᴇᴀᴅ ᴛʜɪs ᴄʜᴀɴɴᴇʟ.</b>\n"
+            "ᴍᴀᴋᴇ sᴜʀᴇ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ ɪs ᴀ ᴍᴇᴍʙᴇʀ, ᴛʜᴇɴ ʀᴇᴛʀʏ.\n\n"
             "⚠️ <b>ʙᴏᴛ ᴅᴏᴇs ɴᴏᴛ ɴᴇᴇᴅ ᴛᴏ ʙᴇ ᴀᴅᴍɪɴ ɪɴ sᴏᴜʀᴄᴇ.</b>"
             if "Admin" in err_name or "Private" in err_name or "Forbidden" in err_name
-            else f"<b>ᴇʀʀᴏʀ:</b> <code>{err_name}: {e}</code>\n\n"
-                 "ᴍᴀᴋᴇ sᴜʀᴇ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ ɪs ᴀ ᴍᴇᴍʙᴇʀ ᴏғ ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ."
+            else f"<code>{err_name}: {e}</code>"
         )
         return await status_msg.edit_text(
-            f"❌ <b>ᴄᴀɴɴᴏᴛ ᴀᴄᴄᴇss sᴏᴜʀᴄᴇ ᴄʜᴀɴɴᴇʟ</b> "
-            f"(<code>{err_name}</code>)\n\n{hint}",
+            f"❌ <b>sᴏᴜʀᴄᴇ ʀᴇᴀᴅ ᴇʀʀᴏʀ</b> (<code>{err_name}</code>)\n\n{hint}",
             parse_mode=HTML,
         )
 
