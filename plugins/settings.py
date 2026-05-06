@@ -134,14 +134,22 @@ def _cancel_kb() -> InlineKeyboardMarkup:
     )
 
 
-# ---------------- main screen ----------------
+# ---------------- main screen (owner / admin) ----------------
 async def _render_main(bot: Client, user_id: int):
+    is_owner = int(user_id) == int(OWNER_ID)
+    is_admin = (not is_owner) and await db.is_admin(user_id)
+
+    # Normal users see ONLY the Auto Accept panel
+    if not is_owner and not is_admin:
+        await _render_main_user(bot, user_id)
+        return
+
     n_promos = await db.count_user_promos(user_id)
     session = await db.get_session(user_id)
     fwd_dst = await db.get_user_setting(user_id, "destination")
     batch_dst = await db.get_user_setting(user_id, "batch_dest")
 
-    limit = "∞" if int(user_id) == int(OWNER_ID) else str(PROMO_PER_USER_LIMIT)
+    limit = "∞" if is_owner else str(PROMO_PER_USER_LIMIT)
     try:
         u = await bot.get_users(user_id)
         mention = u.mention
@@ -181,7 +189,7 @@ async def _render_main(bot: Client, user_id: int):
             InlineKeyboardButton("🚪 ʟᴏɢᴏᴜᴛ", callback_data="set:logout"),
         ],
     ]
-    if int(user_id) == int(OWNER_ID):
+    if is_owner:
         _kb_rows.append(
             [InlineKeyboardButton("👮 ᴀᴅᴍɪɴs", callback_data="set:admins")]
         )
@@ -193,6 +201,41 @@ async def _render_main(bot: Client, user_id: int):
 
     state = settings_state.setdefault(user_id, {})
     state["screen"] = "main"
+    state["awaiting"] = None
+    state["ctx"] = {}
+    await _edit_panel(bot, user_id, caption, kb)
+
+
+# ---------------- main screen (normal user — Auto Accept only) ----------------
+async def _render_main_user(bot: Client, user_id: int):
+    enabled = await db.get_user_setting(user_id, "auto_accept_enabled")
+    if enabled is None:
+        enabled = True   # default: on
+
+    status = "✅ ᴏɴ" if enabled else "❌ ᴏFF"
+    toggle_label = "🔴 ᴛᴜʀɴ ᴏFF" if enabled else "✅ ᴛᴜʀɴ ᴏɴ"
+
+    try:
+        u = await bot.get_users(user_id)
+        mention = u.mention
+    except Exception:
+        mention = f"<code>{user_id}</code>"
+
+    caption = (
+        f"<b>⚙️ sᴇᴛᴛɪɴɢs</b> · {mention}\n\n"
+        f"<b>🤖 ᴀᴜᴛᴏ ᴀᴄᴄᴇᴘᴛ</b>\n"
+        f"   sᴛᴀᴛᴜs: <b>{status}</b>\n\n"
+        f"<i>ᴡʜᴇɴ ᴏɴ, ʏᴏᴜ ᴀʀᴇ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴀᴄᴄᴇᴘᴛᴇᴅ "
+        f"ɪɴᴛᴏ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ɢʀᴏᴜᴘs.</i>"
+    )
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(toggle_label, callback_data="set:auto_accept_toggle")],
+        [InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="set:close")],
+    ])
+
+    state = settings_state.setdefault(user_id, {})
+    state["screen"] = "main_user"
     state["awaiting"] = None
     state["ctx"] = {}
     await _edit_panel(bot, user_id, caption, kb)
@@ -972,6 +1015,26 @@ async def cb_admin_list(bot: Client, query: CallbackQuery):
     settings_state[user_id]["panel_msg_id"] = query.message.id
     await query.answer()
     await _render_admins(bot, user_id)
+
+
+# ---------------- auto accept toggle (normal users only) ----------------
+@Client.on_callback_query(filters.regex(r"^set:auto_accept_toggle$"))
+async def cb_auto_accept_toggle(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    # Owner and admins use the full panel — this button is for normal users only
+    if int(user_id) == int(OWNER_ID) or await db.is_admin(user_id):
+        await query.answer("ᴜsᴇ ᴛʜᴇ ᴀᴅᴍɪɴ ᴘᴀɴᴇʟ", show_alert=True)
+        return
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    current = await db.get_user_setting(user_id, "auto_accept_enabled")
+    if current is None:
+        current = True
+    new_val = not current
+    await db.set_user_setting(user_id, "auto_accept_enabled", new_val)
+    await query.answer("✅ ᴏɴ" if new_val else "❌ ᴏFF")
+    await _render_main_user(bot, user_id)
 
 # ------------------------------------------------------------------
 # Capture user input while the panel is awaiting something.
