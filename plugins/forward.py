@@ -261,14 +261,15 @@ async def _run_forward_range(bot: Client, message: Message,
     src_id:    int | None = src if isinstance(src, int) else None
 
     forward_state[user_id] = {
-        "cancel":    False,
-        "ok":        0,
-        "fail":      0,
-        "skip":      0,
-        "processed": 0,
-        "total":     total,
-        "src":       str(src),
-        "dest":      str(dest),
+        "cancel":      False,
+        "ok":          0,
+        "fail":        0,
+        "skip":        0,
+        "processed":   0,
+        "total":       total,
+        "src":         str(src),
+        "dest":        str(dest),
+        "first_error": None,
     }
     state = forward_state[user_id]
 
@@ -293,12 +294,33 @@ async def _run_forward_range(bot: Client, message: Message,
     except Exception as e:
         forward_state.pop(user_id, None)
         return await status_msg.edit_text(
-            f"❌ <b>sᴇssɪᴏɴ ᴇʀʀᴏʀ:</b> <code>{e}</code>", parse_mode=HTML)
+            f"❌ <b>sᴇssɪᴏɴ ᴇʀʀᴏʀ:</b> <code>{e}</code>\n\n"
+            f"<b>ᴛʀʏ /logout ᴀɴᴅ /login ᴀɢᴀɪɴ.</b>",
+            parse_mode=HTML)
 
     try:
         user_client.parse_mode = HTML
     except Exception:
         pass
+
+    # ── PRE-FLIGHT: verify source access & dest write permission ──
+    try:
+        test_msg = await user_client.get_messages(src, start_id)
+        if test_msg is None or getattr(test_msg, "empty", False):
+            # Message is empty but channel is accessible — that's fine
+            pass
+    except Exception as e:
+        forward_state.pop(user_id, None)
+        try:
+            await user_client.stop()
+        except Exception:
+            pass
+        return await status_msg.edit_text(
+            f"❌ <b>ᴄᴀɴɴᴏᴛ ᴀᴄᴄᴇss sᴏᴜʀᴄᴇ ᴄʜᴀɴɴᴇʟ:</b>\n"
+            f"<code>{type(e).__name__}: {e}</code>\n\n"
+            f"<b>ᴍᴀᴋᴇ sᴜʀᴇ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ ɪs ᴀ ᴍᴇᴍʙᴇʀ ᴏғ ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ.</b>",
+            parse_mode=HTML,
+        )
 
     seen_groups: set[str] = set()
     last_edit   = 0.0
@@ -319,11 +341,15 @@ async def _run_forward_range(bot: Client, message: Message,
                 await asyncio.sleep(e.value + 2)
                 try:
                     msgs = await user_client.get_messages(src, chunk)
-                except Exception:
+                except Exception as e2:
+                    if not state["first_error"]:
+                        state["first_error"] = f"get_messages: {type(e2).__name__}: {e2}"
                     state["fail"]      += len(chunk)
                     state["processed"] += len(chunk)
                     continue
-            except Exception:
+            except Exception as e:
+                if not state["first_error"]:
+                    state["first_error"] = f"get_messages: {type(e).__name__}: {e}"
                 state["fail"]      += len(chunk)
                 state["processed"] += len(chunk)
                 continue
@@ -350,14 +376,16 @@ async def _run_forward_range(bot: Client, message: Message,
                     if msg.media_group_id in seen_groups:
                         continue
                     seen_groups.add(msg.media_group_id)
-                    sent = await _send_media_group(user_client, src, msg.id, dest)
+                    sent, err = await _send_media_group(user_client, src, msg.id, dest)
                 else:
-                    sent = await _send_one(user_client, msg, dest)
+                    sent, err = await _send_one(user_client, msg, dest)
 
                 if sent:
                     state["ok"] += 1
                 else:
                     state["fail"] += 1
+                    if err and not state["first_error"]:
+                        state["first_error"] = err
 
                 last_saved_id = msg.id
                 await asyncio.sleep(0.5)
@@ -404,77 +432,89 @@ async def _run_forward_range(bot: Client, message: Message,
         )
     else:
         await db.clear_resume(user_id)
-        await status_msg.edit_text(
+        first_error = state.get("first_error")
+        done_text = (
             f"✅ <b>ᴅᴏɴᴇ!</b>\n\n"
             f"✅ <b>sᴇɴᴛ:</b>  <code>{ok}</code>\n"
             f"❌ <b>ғᴀɪʟ:</b>  <code>{fail}</code>\n"
-            f"⏭ <b>sᴋɪᴘ:</b>  <code>{skip}</code>",
-            parse_mode=HTML,
+            f"⏭ <b>sᴋɪᴘ:</b>  <code>{skip}</code>"
         )
+        if fail > 0 and first_error:
+            done_text += f"\n\n⚠️ <b>ғɪʀsᴛ ᴇʀʀᴏʀ:</b>\n<code>{first_error}</code>"
+        await status_msg.edit_text(done_text, parse_mode=HTML)
 
 
 # --------------- Internals ---------------
-async def _send_one(user_client: Client, msg: Message, dest) -> bool:
+async def _send_one(user_client: Client, msg: Message, dest) -> tuple[bool, str | None]:
     bold = _bold_caption(msg)
+    copy_err: str | None = None
     try:
         await msg.copy(dest, caption=bold, parse_mode=HTML)
-        return True
+        return True, None
     except FloodWait as e:
         await asyncio.sleep(e.value + 1)
-    except Exception:
-        pass
-    return await _download_reupload(user_client, msg, dest)
+        copy_err = f"FloodWait({e.value}s) on copy"
+    except Exception as e:
+        copy_err = f"copy: {type(e).__name__}: {e}"
+    ok, err = await _download_reupload(user_client, msg, dest)
+    return ok, (err or copy_err)
 
 
-async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> bool:
+async def _send_media_group(user_client: Client, src, anchor_id: int, dest) -> tuple[bool, str | None]:
     group: list[Message] = []
     captions = None
+    last_err: str | None = None
     try:
         group    = await user_client.get_media_group(src, anchor_id)
         captions = [f"<b>{i.caption.html}</b>" if i.caption else "" for i in group]
-    except Exception:
+    except Exception as e:
         group = []; captions = None
+        last_err = f"get_media_group: {type(e).__name__}: {e}"
 
     try:
         await user_client.copy_media_group(dest, src, anchor_id, captions=captions)
-        return True
+        return True, None
     except FloodWait as e:
         await asyncio.sleep(e.value + 1)
-    except Exception:
-        pass
+        last_err = f"FloodWait({e.value}s) on copy_media_group"
+    except Exception as e:
+        last_err = f"copy_media_group: {type(e).__name__}: {e}"
 
     if group:
         any_ok = False
         for item in group:
-            if await _download_reupload(user_client, item, dest):
+            ok, err = await _download_reupload(user_client, item, dest)
+            if ok:
                 any_ok = True
+            elif err and not any_ok:
+                last_err = err
             await asyncio.sleep(0.5)
-        return any_ok
+        return any_ok, (None if any_ok else last_err)
 
     try:
         anc = await user_client.get_messages(src, anchor_id)
         if anc and not getattr(anc, "empty", False):
             return await _download_reupload(user_client, anc, dest)
-    except Exception:
-        pass
-    return False
+    except Exception as e:
+        last_err = f"anchor get_messages: {type(e).__name__}: {e}"
+    return False, last_err
 
 
-async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
+async def _download_reupload(user_client: Client, msg: Message, dest) -> tuple[bool, str | None]:
     try:
         if msg.text and not msg.media:
             try:
                 await user_client.send_message(
                     dest, f"<b>{msg.text.html}</b>",
                     parse_mode=HTML, disable_web_page_preview=True)
-                return True
-            except Exception:
-                return False
+                return True, None
+            except Exception as e:
+                return False, f"send_message: {type(e).__name__}: {e}"
 
         caption = _bold_caption(msg)
         path    = await user_client.download_media(msg)
         if not path:
-            return False
+            return False, "download_media returned None (no downloadable media or access denied)"
 
         try:
             if msg.photo:
@@ -499,7 +539,9 @@ async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
                     file_name=msg.document.file_name)
             else:
                 await user_client.send_document(dest, path, caption=caption, parse_mode=HTML)
-            return True
+            return True, None
+        except Exception as e:
+            return False, f"send_{type(msg.media).__name__ if msg.media else 'doc'}: {type(e).__name__}: {e}"
         finally:
             try:
                 os.remove(path)
@@ -507,6 +549,6 @@ async def _download_reupload(user_client: Client, msg: Message, dest) -> bool:
                 pass
     except FloodWait as e:
         await asyncio.sleep(e.value + 1)
-        return False
-    except Exception:
-        return False
+        return False, f"FloodWait({e.value}s) in download_reupload"
+    except Exception as e:
+        return False, f"download_reupload: {type(e).__name__}: {e}"
