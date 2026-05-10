@@ -1,5 +1,41 @@
 # CHANGES
 
+## Fix 3: Destination peer not resolved → ALL messages fail (PeerIdInvalid)
+
+### Problem
+Every message was counted as **fail** when using `/forward` with a numeric destination
+channel ID (e.g. `/setdest -1001234567890`).
+
+### Root Cause
+`user_client` is started as an **in-memory session** — it has zero peer cache.
+The code already resolved the **source** channel's `access_hash` so `get_messages`
+works. But the **destination** channel was never resolved. Every subsequent send call
+(`msg.copy`, `send_photo`, `send_video`, etc.) hits Pyrogram's peer lookup, finds
+nothing, and raises `PeerIdInvalid` → the message is counted as fail without a useful
+error shown to the user.
+
+### Fix
+Added a **3-step destination peer resolution** block (identical pattern to source
+resolution) that runs right after the source pre-flight check:
+
+| Step | Action |
+|---|---|
+| 1 | `get_chat(dest)` — fast path if already cached |
+| 2 | Raw `GetChannels` with `access_hash=0` — works when user is a member |
+| 3 | Walk `iter_dialogs` — definitive check that also caches the peer |
+
+If all three steps fail the bot now shows a clear error telling the user their
+account is not a member/admin of the destination channel.
+
+### Also fixed (same PR)
+- `_send_one`: after a `FloodWait` the copy is now **retried once** before
+  falling through to the download-reupload path (previously it slept and then
+  immediately went to re-upload).
+
+---
+
+## Fix 2: Batch/Album broken on restricted channels
+
 ## Fix 1: Sender Filter for `/forward` command
 
 ### Problem
