@@ -401,6 +401,64 @@ async def _run_forward_range(bot: Client, message: Message,
             parse_mode=HTML,
         )
 
+    # ── DEST PEER RESOLVE ──────────────────────────────────────────────────────
+    # The user_client is in-memory — it has no peer cache at all.
+    # Even after the source is resolved above, the DESTINATION channel is still
+    # unknown to Pyrogram, so every send call fails with PeerIdInvalid.
+    # We must resolve the destination peer before touching it.
+    if isinstance(dest, int):
+        dest_resolved = False
+        dest_raw_id   = abs(dest) - 10 ** 12   # strip the -100 prefix
+
+        # Step 1: direct get_chat
+        try:
+            await user_client.get_chat(dest)
+            dest_resolved = True
+        except Exception:
+            pass
+
+        # Step 2: raw GetChannels with access_hash=0 (works when user is member)
+        if not dest_resolved:
+            try:
+                res = await user_client.invoke(
+                    raw_fn.channels.GetChannels(
+                        id=[raw_types.InputChannel(
+                            channel_id=dest_raw_id,
+                            access_hash=0,
+                        )]
+                    )
+                )
+                if res and getattr(res, "chats", None):
+                    dest_resolved = True
+            except Exception:
+                pass
+
+        # Step 3: walk dialogs — definitive membership + caches the peer
+        if not dest_resolved:
+            try:
+                async for dialog in user_client.iter_dialogs():
+                    cid = dialog.chat.id
+                    if cid == dest or abs(cid) - 10 ** 12 == dest_raw_id:
+                        dest_resolved = True
+                        break
+            except Exception:
+                pass
+
+        if not dest_resolved:
+            forward_state.pop(user_id, None)
+            try:
+                await user_client.stop()
+            except Exception:
+                pass
+            return await status_msg.edit_text(
+                "❌ <b>ᴄᴀɴɴᴏᴛ ʀᴇsᴏʟᴠᴇ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ᴄʜᴀɴɴᴇʟ</b>\n\n"
+                "🔑 <b>ʏᴏᴜʀ ʟᴏɢɢᴇᴅ-ɪɴ ᴀᴄᴄᴏᴜɴᴛ ɪs ɴᴏᴛ ᴀ ᴍᴇᴍʙᴇʀ / ᴀᴅᴍɪɴ ᴏғ ᴛʜᴇ "
+                "ᴅᴇsᴛɪɴᴀᴛɪᴏɴ ᴄʜᴀɴɴᴇʟ.</b>\n\n"
+                "• ᴊᴏɪɴ ᴏʀ ᴀᴅᴅ ʏᴏᴜʀ ᴀᴄᴄᴏᴜɴᴛ ᴀs ᴀᴅᴍɪɴ ɪɴ ᴛʜᴇ ᴅᴇsᴛɪɴᴀᴛɪᴏɴ\n"
+                "• /logout ᴀɴᴅ /login ᴀɢᴀɪɴ ᴛᴏ ʀᴇғʀᴇsʜ sᴇssɪᴏɴ",
+                parse_mode=HTML,
+            )
+
     seen_groups: set[str] = set()
     last_edit   = 0.0
     last_saved_id = start_id - 1
@@ -527,14 +585,18 @@ async def _run_forward_range(bot: Client, message: Message,
 async def _send_one(user_client: Client, msg: Message, dest) -> tuple[bool, str | None]:
     bold = _bold_caption(msg)
     copy_err: str | None = None
-    try:
-        await msg.copy(dest, caption=bold, parse_mode=HTML)
-        return True, None
-    except FloodWait as e:
-        await asyncio.sleep(e.value + 1)
-        copy_err = f"FloodWait({e.value}s) on copy"
-    except Exception as e:
-        copy_err = f"copy: {type(e).__name__}: {e}"
+    # Attempt copy up to 2 times (retry once after FloodWait)
+    for attempt in range(2):
+        try:
+            await msg.copy(dest, caption=bold, parse_mode=HTML)
+            return True, None
+        except FloodWait as e:
+            await asyncio.sleep(e.value + 1)
+            copy_err = f"FloodWait({e.value}s) on copy"
+            continue  # retry the copy after sleeping
+        except Exception as e:
+            copy_err = f"copy: {type(e).__name__}: {e}"
+            break
     ok, err = await _download_reupload(user_client, msg, dest)
     return ok, (err or copy_err)
 
