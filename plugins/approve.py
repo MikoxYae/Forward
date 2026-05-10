@@ -11,6 +11,7 @@ from pyrogram.errors import (
     UserAlreadyParticipant,
     RPCError,
 )
+from pyrogram.raw import functions as raw_fn, types as raw_types
 from pyrogram.types import Message
 
 from config import APP_ID, API_HASH
@@ -79,11 +80,52 @@ async def approve_cmd(bot: Client, message: Message):
         )
 
     try:
+        # ── PEER RESOLVE ────────────────────────────────────────────────────────
+        # In-memory sessions have zero peer cache. get_chat() alone raises
+        # PeerIdInvalid for numeric IDs. Use a 3-step fallback to populate
+        # the cache before we touch the chat.
+        chat = None
+        resolve_err: str | None = None
+
+        # Step 1: direct get_chat (works for usernames and cached peers)
         try:
             chat = await uc.get_chat(chat_ref)
         except Exception as e:
+            resolve_err = str(e)
+
+        # Step 2: raw GetChannels with access_hash=0 (numeric IDs only)
+        if chat is None and isinstance(chat_ref, int):
+            raw_ch_id = abs(chat_ref) - 10 ** 12
+            try:
+                await uc.invoke(
+                    raw_fn.channels.GetChannels(
+                        id=[raw_types.InputChannel(
+                            channel_id=raw_ch_id,
+                            access_hash=0,
+                        )]
+                    )
+                )
+                chat = await uc.get_chat(chat_ref)
+            except Exception as e:
+                resolve_err = str(e)
+
+        # Step 3: walk dialogs — caches all peers the user is a member of
+        if chat is None and isinstance(chat_ref, int):
+            raw_ch_id = abs(chat_ref) - 10 ** 12
+            try:
+                async for dialog in uc.iter_dialogs():
+                    cid = dialog.chat.id
+                    if cid == chat_ref or abs(cid) - 10 ** 12 == raw_ch_id:
+                        chat = dialog.chat
+                        break
+            except Exception as e:
+                resolve_err = str(e)
+
+        if chat is None:
             return await status.edit_text(
-                f"<b>ᴄʜᴀᴛ ɴᴏᴛ ғᴏᴜɴᴅ ᴏʀ ɪɴᴀᴄᴄᴇssɪʙʟᴇ:</b> <code>{e}</code>",
+                f"<b>ᴄʜᴀᴛ ɴᴏᴛ ғᴏᴜɴᴅ ᴏʀ ɪɴᴀᴄᴄᴇssɪʙʟᴇ</b>\n\n"
+                f"<code>{resolve_err}</code>\n\n"
+                "<b>ᴍᴀᴋᴇ sᴜʀᴇ ʏᴏᴜʀ ʟᴏɢɢᴇᴅ-ɪɴ ᴀᴄᴄᴏᴜɴᴛ ɪs ᴀɴ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴀᴛ ᴄʜᴀᴛ.</b>",
                 parse_mode=HTML,
             )
 
