@@ -6,7 +6,7 @@ MONGO_URI = os.environ.get(
 )
 DB_NAME = os.environ.get("DATABASE_NAME", "Anything")
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8717980062:AAGf3y0VFNtxUE0vQdYVkgI4CQrBPW6_zAU")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8600454242:AAEDXLgf_zL3I7GfELzyJMru8lPRDLjwpPE")
 
 APP_ID = int(os.environ.get("APP_ID", "28614709"))
 API_HASH = os.environ.get("API_HASH", "f36fd2ee6e3d3a17c4d244ff6dc1bac8")
