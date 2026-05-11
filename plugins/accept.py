@@ -219,7 +219,12 @@ async def _save_chat(chat):
 
 async def _save_user_and_counters(chat, user):
     try:
-        await db.add_user(user.id, user.username, user.first_name)
+        await db.add_user(
+            user.id,
+            user.username,
+            user.first_name,
+            access_hash=getattr(user, "access_hash", None),
+        )
     except Exception as e:
         log.warning(f"db.add_user failed for {user.id}: {e}")
     try:
