@@ -210,12 +210,19 @@ async def approve_cmd(bot: Client, message: Message):
                     failed += 1
 
                 # Send welcome PM via bot (same message as auto_accept).
-                # Uses bot client so the template + DB settings are respected.
-                # PeerIdInvalid is expected for users who never started the bot —
-                # we silently skip them, approval is already done.
+                # For pending/old requests the bot has never seen these users
+                # in any update, so their access_hash is NOT in its peer cache.
+                # Fix: call bot.get_chat_member() first — user is now in the
+                # chat and bot is admin, so this always resolves the peer and
+                # populates the cache. Then _send_welcome works normally.
                 if _approved_this_user:
                     try:
-                        await _send_welcome(bot, chat, user)
+                        try:
+                            cm = await bot.get_chat_member(chat_id, user.id)
+                            send_user = cm.user if cm.user else user
+                        except Exception:
+                            send_user = user
+                        await _send_welcome(bot, chat, send_user)
                         welcomed += 1
                     except Exception as e:
                         log.debug(f"welcome skipped for {user.id}: {e}")
