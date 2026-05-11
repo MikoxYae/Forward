@@ -19,11 +19,15 @@ class Database:
 
     # ---------------- USERS ----------------
     async def add_user(self, user_id: int, username: str | None = None,
-                       first_name: str | None = None):
+                       first_name: str | None = None,
+                       access_hash: int | None = None):
+        set_fields: dict = {"username": username, "first_name": first_name}
+        if access_hash is not None:
+            set_fields["access_hash"] = access_hash
         await self.users.update_one(
             {"_id": user_id},
             {
-                "$set": {"username": username, "first_name": first_name},
+                "$set": set_fields,
                 "$setOnInsert": {"joined_at": datetime.utcnow()},
             },
             upsert=True,
