@@ -104,9 +104,12 @@ async def _send_welcome(bot: Client, chat, user):
                 disable_web_page_preview=True,
             )
         except PeerIdInvalid:
-            # Peer not in bot's cache — resolve via get_chat_member and retry.
-            # User is now in the chat and bot is admin, so this always works.
-            log.debug(f"PEER_ID_INVALID for {user.id} — resolving via get_chat_member and retrying")
+            # Peer not in bot's cache — this happens when Pyrogram hasn't
+            # finished storing the peer from the ChatJoinRequest update yet.
+            # Wait briefly so Telegram can propagate the membership, then
+            # resolve via get_chat_member (bot is admin → always works).
+            log.debug(f"PEER_ID_INVALID for {user.id} — waiting 0.5s then resolving via get_chat_member")
+            await asyncio.sleep(0.5)
             cm = await bot.get_chat_member(chat.id, user.id)
             resolved_user = cm.user if cm.user else user
             await bot.send_message(
