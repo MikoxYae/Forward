@@ -190,8 +190,13 @@ async def _render_main(bot: Client, user_id: int):
         ],
     ]
     if is_owner:
+        _kb_rows.append([
+            InlineKeyboardButton("👥 ᴜsᴇʀs", callback_data="set:users"),
+            InlineKeyboardButton("👮 ᴀᴅᴍɪɴs", callback_data="set:admins"),
+        ])
+    else:
         _kb_rows.append(
-            [InlineKeyboardButton("👮 ᴀᴅᴍɪɴs", callback_data="set:admins")]
+            [InlineKeyboardButton("👥 ᴜsᴇʀs", callback_data="set:users")]
         )
     _kb_rows.append([
         InlineKeyboardButton("🔑 ʟᴏɢɪɴ ʜᴇʟᴘ", callback_data="set:login_help"),
@@ -383,6 +388,43 @@ async def _render_admins(bot: Client, user_id: int, note: str | None = None):
 
     state = settings_state.setdefault(user_id, {})
     state["screen"] = "admins"
+    state["awaiting"] = None
+    state["ctx"] = {}
+    await _edit_panel(bot, user_id, caption, kb)
+
+
+# ---------------- users screen ----------------
+async def _render_users(bot: Client, user_id: int):
+    """Owner and admin: show saved users list (latest 30)."""
+    total = await db.total_users()
+
+    users = []
+    async for u in db.recent_users(30):
+        users.append(u)
+
+    if not users:
+        caption = "<b>👥 ᴜsᴇʀs</b>\n\n<b>ɴᴏ ᴜsᴇʀs ʏᴇᴛ.</b>"
+    else:
+        lines = [f"<b>👥 ᴜsᴇʀs</b> — ᴛᴏᴛᴀʟ: <code>{total}</code>\n"]
+        for u in users:
+            uid = u["_id"]
+            name = u.get("first_name") or "—"
+            un = f" @{u['username']}" if u.get("username") else ""
+            joined = u.get("joined_at")
+            date_str = joined.strftime("%d %b %Y") if joined else "—"
+            lines.append(
+                f"• <code>{uid}</code> — <b>{name}</b>{un} — <i>{date_str}</i>"
+            )
+        if total > 30:
+            lines.append(f"\n<i>sʜᴏᴡɪɴɢ ʟᴀᴛᴇsᴛ 30 ᴏғ {total} ᴜsᴇʀs.</i>")
+        caption = "\n".join(lines)
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ ʙᴀᴄᴋ", callback_data="set:main")],
+    ])
+
+    state = settings_state.setdefault(user_id, {})
+    state["screen"] = "users"
     state["awaiting"] = None
     state["ctx"] = {}
     await _edit_panel(bot, user_id, caption, kb)
@@ -950,6 +992,20 @@ async def cb_login_help(bot: Client, query: CallbackQuery):
     )
 
 
+
+
+# ---------------- users callback ----------------
+@Client.on_callback_query(filters.regex(r"^set:users$"))
+async def cb_users(bot: Client, query: CallbackQuery):
+    user_id = query.from_user.id
+    if int(user_id) != int(OWNER_ID) and not await db.is_admin(user_id):
+        await query.answer("ᴏᴡɴᴇʀ / ᴀᴅᴍɪɴ ᴏɴʟʏ", show_alert=True)
+        return
+    settings_state.setdefault(user_id, {})
+    settings_state[user_id]["panel_chat_id"] = query.message.chat.id
+    settings_state[user_id]["panel_msg_id"] = query.message.id
+    await query.answer()
+    await _render_users(bot, user_id)
 
 
 # ---------------- admin management callbacks ----------------
