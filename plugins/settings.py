@@ -395,29 +395,9 @@ async def _render_admins(bot: Client, user_id: int, note: str | None = None):
 
 # ---------------- users screen ----------------
 async def _render_users(bot: Client, user_id: int):
-    """Owner and admin: show saved users list (latest 30)."""
+    """Owner and admin: show total user count."""
     total = await db.total_users()
-
-    users = []
-    async for u in db.recent_users(30):
-        users.append(u)
-
-    if not users:
-        caption = "<b>👥 ᴜsᴇʀs</b>\n\n<b>ɴᴏ ᴜsᴇʀs ʏᴇᴛ.</b>"
-    else:
-        lines = [f"<b>👥 ᴜsᴇʀs</b> — ᴛᴏᴛᴀʟ: <code>{total}</code>\n"]
-        for u in users:
-            uid = u["_id"]
-            name = u.get("first_name") or "—"
-            un = f" @{u['username']}" if u.get("username") else ""
-            joined = u.get("joined_at")
-            date_str = joined.strftime("%d %b %Y") if joined else "—"
-            lines.append(
-                f"• <code>{uid}</code> — <b>{name}</b>{un} — <i>{date_str}</i>"
-            )
-        if total > 30:
-            lines.append(f"\n<i>sʜᴏᴡɪɴɢ ʟᴀᴛᴇsᴛ 30 ᴏғ {total} ᴜsᴇʀs.</i>")
-        caption = "\n".join(lines)
+    caption = f"<b>👥 ᴜsᴇʀs — ᴛᴏᴛᴀʟ: <code>{total}</code></b>"
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("⬅️ ʙᴀᴄᴋ", callback_data="set:main")],
