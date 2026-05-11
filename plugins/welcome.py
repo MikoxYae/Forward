@@ -1,3 +1,5 @@
+import html as _html
+
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 
@@ -23,6 +25,10 @@ async def _is_chat_admin(bot: Client, chat_id: int, user_id: int) -> bool:
 
 @Client.on_message(filters.command("setwelcome") & ~filters.private)
 async def set_welcome(bot: Client, message: Message):
+    # Channel posts have no from_user (admin posting as the channel)
+    if not message.from_user:
+        return
+
     if not await _is_chat_admin(bot, message.chat.id, message.from_user.id):
         return await message.reply_text(
             "<b>ᴏɴʟʏ ᴄʜᴀᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ.</b>",
@@ -57,6 +63,10 @@ async def set_welcome(bot: Client, message: Message):
 
 @Client.on_message(filters.command("clearwelcome") & ~filters.private)
 async def clear_welcome(bot: Client, message: Message):
+    # Channel posts have no from_user
+    if not message.from_user:
+        return
+
     if not await _is_chat_admin(bot, message.chat.id, message.from_user.id):
         return await message.reply_text(
             "<b>ᴏɴʟʏ ᴄʜᴀᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ.</b>",
@@ -71,6 +81,10 @@ async def clear_welcome(bot: Client, message: Message):
 
 @Client.on_message(filters.command("togglewelcome") & ~filters.private)
 async def toggle_welcome(bot: Client, message: Message):
+    # Channel posts have no from_user
+    if not message.from_user:
+        return
+
     if not await _is_chat_admin(bot, message.chat.id, message.from_user.id):
         return await message.reply_text(
             "<b>ᴏɴʟʏ ᴄʜᴀᴛ ᴀᴅᴍɪɴs ᴄᴀɴ ᴜsᴇ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ.</b>",
@@ -91,9 +105,12 @@ async def show_welcome(bot: Client, message: Message):
     enabled = await db.get_chat_setting(message.chat.id, "welcome_enabled", True)
     text = await db.get_chat_setting(message.chat.id, "welcome_text", None) or DEFAULT_WELCOME
     state = "ᴏɴ" if enabled else "ᴏғғ"
+    # Escape the raw template so placeholder URLs like {chat_link} don't
+    # cause Telegram to reject the message as invalid HTML.
+    safe_text = _html.escape(text)
     await message.reply_text(
         f"<b>ᴡᴇʟᴄᴏᴍᴇ ᴘᴍ:</b> <code>{state}</code>\n\n"
-        f"<b>ᴄᴜʀʀᴇɴᴛ ᴛᴇᴍᴘʟᴀᴛᴇ:</b>\n{text}",
+        f"<b>ᴄᴜʀʀᴇɴᴛ ᴛᴇᴍᴘʟᴀᴛᴇ:</b>\n<pre>{safe_text}</pre>",
         parse_mode=HTML,
         disable_web_page_preview=True,
     )
