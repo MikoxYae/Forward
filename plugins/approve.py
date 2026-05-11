@@ -16,6 +16,7 @@ from pyrogram.types import Message
 
 from config import APP_ID, API_HASH
 from database.db import db
+from plugins.accept import _send_welcome
 
 
 HTML = enums.ParseMode.HTML
@@ -157,6 +158,7 @@ async def approve_cmd(bot: Client, message: Message):
         approved = 0
         failed = 0
         saved = 0
+        welcomed = 0
         last_edit = 0.0
 
         try:
@@ -175,23 +177,28 @@ async def approve_cmd(bot: Client, message: Message):
                     pass
 
                 # Approve this single user.
+                _approved_this_user = False
                 try:
                     await uc.approve_chat_join_request(chat_id, user.id)
                     approved += 1
+                    _approved_this_user = True
                 except FloodWait as e:
                     log.warning(f"FloodWait {e.value}s while approving {user.id} in {chat_id}")
                     await asyncio.sleep(e.value + 1)
                     try:
                         await uc.approve_chat_join_request(chat_id, user.id)
                         approved += 1
+                        _approved_this_user = True
                     except UserAlreadyParticipant:
                         approved += 1
+                        _approved_this_user = True
                     except Exception as ee:
                         log.warning(f"approve retry failed for {user.id}: {ee}")
                         failed += 1
                 except UserAlreadyParticipant:
                     # Already in the chat — count as success.
                     approved += 1
+                    _approved_this_user = True
                 except ChatAdminRequired:
                     # No point continuing — bail out cleanly.
                     raise
@@ -202,6 +209,17 @@ async def approve_cmd(bot: Client, message: Message):
                     log.warning(f"approve unexpected for {user.id}: {e}")
                     failed += 1
 
+                # Send welcome PM via bot (same message as auto_accept).
+                # Uses bot client so the template + DB settings are respected.
+                # PeerIdInvalid is expected for users who never started the bot —
+                # we silently skip them, approval is already done.
+                if _approved_this_user:
+                    try:
+                        await _send_welcome(bot, chat, user)
+                        welcomed += 1
+                    except Exception as e:
+                        log.debug(f"welcome skipped for {user.id}: {e}")
+
                 # Live status update every ~2 seconds (Telegram rate-limits edits).
                 now = time.time()
                 if now - last_edit > 2:
@@ -209,6 +227,7 @@ async def approve_cmd(bot: Client, message: Message):
                         await status.edit_text(
                             f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
                             f"<b>ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>  "
+                            f"<b>ᴡᴇʟᴄᴏᴍᴇᴅ:</b> <code>{welcomed}</code>  "
                             f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed}</code>",
                             parse_mode=HTML,
                         )
@@ -242,6 +261,7 @@ async def approve_cmd(bot: Client, message: Message):
                 f"<b>✅ ᴅᴏɴᴇ</b>\n\n"
                 f"<b>ᴄʜᴀᴛ:</b> <code>{chat_title}</code>\n"
                 f"<b>ᴀᴘᴘʀᴏᴠᴇᴅ:</b> <code>{approved}</code>\n"
+                f"<b>ᴡᴇʟᴄᴏᴍᴇ ᴘᴍ sᴇɴᴛ:</b> <code>{welcomed}</code>\n"
                 f"<b>ғᴀɪʟᴇᴅ (ᴋᴇᴘᴛ ɪɴ ǫᴜᴇᴜᴇ):</b> <code>{failed}</code>\n"
                 f"<b>ᴜsᴇʀs sᴀᴠᴇᴅ ᴛᴏ ᴅʙ:</b> <code>{saved}</code>"
             )
