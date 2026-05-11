@@ -3,7 +3,7 @@ import logging
 import re
 
 from pyrogram import Client, enums
-from pyrogram.errors import FloodWait, UserAlreadyParticipant, RPCError
+from pyrogram.errors import FloodWait, UserAlreadyParticipant, RPCError, PeerIdInvalid
 from pyrogram.types import ChatJoinRequest
 
 from config import DEFAULT_WELCOME, NEW_REQ_MODE
@@ -81,11 +81,12 @@ async def _do_approve(bot: Client, chat_id: int, user_id: int) -> bool:
 
 
 async def _send_welcome(bot: Client, chat, user):
-    """Send welcome PM immediately after approval.
+    """Send welcome PM after approval.
 
-    Called inline (not in a background task) so Pyrogram's peer cache for
-    the user — populated when the ChatJoinRequest update arrived — is still
-    warm and resolve_peer(user.id) will succeed.
+    If the bot hasn't cached the user's peer yet (PEER_ID_INVALID) — which
+    happens for old pending requests and sometimes for new ones too — we
+    resolve the peer via get_chat_member (user is now in the chat, bot is
+    admin so this always works) and retry once.
     """
     try:
         welcome_enabled = await db.get_chat_setting(chat.id, "welcome_enabled", True)
@@ -95,12 +96,26 @@ async def _send_welcome(bot: Client, chat, user):
         template = await db.get_chat_setting(chat.id, "welcome_text", None) or DEFAULT_WELCOME
         text = _format_welcome(template, user=user, chat=chat)
 
-        await bot.send_message(
-            chat_id=user.id,
-            text=text,
-            parse_mode=HTML,
-            disable_web_page_preview=True,
-        )
+        try:
+            await bot.send_message(
+                chat_id=user.id,
+                text=text,
+                parse_mode=HTML,
+                disable_web_page_preview=True,
+            )
+        except PeerIdInvalid:
+            # Peer not in bot's cache — resolve via get_chat_member and retry.
+            # User is now in the chat and bot is admin, so this always works.
+            log.debug(f"PEER_ID_INVALID for {user.id} — resolving via get_chat_member and retrying")
+            cm = await bot.get_chat_member(chat.id, user.id)
+            resolved_user = cm.user if cm.user else user
+            await bot.send_message(
+                chat_id=resolved_user.id,
+                text=_format_welcome(template, user=resolved_user, chat=chat),
+                parse_mode=HTML,
+                disable_web_page_preview=True,
+            )
+
         log.info(f"welcome PM sent to {user.id} for chat {chat.id}")
     except Exception as e:
         log.warning(f"welcome PM to {user.id} not delivered: {e}")
