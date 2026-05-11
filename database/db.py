@@ -41,6 +41,9 @@ class Database:
     def all_users(self):
         return self.users.find({})
 
+    def recent_users(self, limit: int = 30):
+        return self.users.find({}).sort("joined_at", -1).limit(limit)
+
     # ---------------- SESSIONS (user MTProto sessions) ----------------
     async def save_session(self, user_id: int, session_string: str):
         await self.sessions.update_one(
