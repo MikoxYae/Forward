@@ -6,7 +6,7 @@ from pyrogram import Client, enums
 from pyrogram.errors import FloodWait, UserAlreadyParticipant, RPCError
 from pyrogram.types import ChatJoinRequest
 
-from config import DEFAULT_WELCOME
+from config import DEFAULT_WELCOME, NEW_REQ_MODE
 from database.db import db
 
 
@@ -108,6 +108,9 @@ async def _send_welcome(bot: Client, chat, user):
 
 @Client.on_chat_join_request()
 async def auto_accept(bot: Client, request: ChatJoinRequest):
+    if not NEW_REQ_MODE:
+        return
+
     chat = request.chat
     user = request.from_user
 
