@@ -1,9 +1,11 @@
 import asyncio
 import logging
+import random
 import re
 
 from pyrogram import Client, enums
 from pyrogram.errors import FloodWait, UserAlreadyParticipant, RPCError, PeerIdInvalid
+from pyrogram.raw import functions as raw_fn, types as raw_types
 from pyrogram.types import ChatJoinRequest
 
 from config import DEFAULT_WELCOME, NEW_REQ_MODE
@@ -83,10 +85,16 @@ async def _do_approve(bot: Client, chat_id: int, user_id: int) -> bool:
 async def _send_welcome(bot: Client, chat, user):
     """Send welcome PM after approval.
 
-    If the bot hasn't cached the user's peer yet (PEER_ID_INVALID) — which
-    happens for old pending requests and sometimes for new ones too — we
-    resolve the peer via get_chat_member (user is now in the chat, bot is
-    admin so this always works) and retry once.
+    Three-layer fallback so PEER_ID_INVALID never silently drops the message:
+
+    1. Normal send_message(user.id)  — works when peer cache is correct.
+    2. send_message(@username)       — bypasses peer cache entirely; works
+                                       for any user that has a username.
+    3. Raw MTProto path              — channels.GetParticipant with
+                                       access_hash=0 (accepted by Telegram
+                                       for admin bots), extracts the real
+                                       access_hash, stores it in Pyrogram's
+                                       session, then retries send_message.
     """
     try:
         welcome_enabled = await db.get_chat_setting(chat.id, "welcome_enabled", True)
@@ -96,6 +104,7 @@ async def _send_welcome(bot: Client, chat, user):
         template = await db.get_chat_setting(chat.id, "welcome_text", None) or DEFAULT_WELCOME
         text = _format_welcome(template, user=user, chat=chat)
 
+        # ── Attempt 1: normal send (peer cache may already be correct) ──────
         try:
             await bot.send_message(
                 chat_id=user.id,
@@ -103,23 +112,57 @@ async def _send_welcome(bot: Client, chat, user):
                 parse_mode=HTML,
                 disable_web_page_preview=True,
             )
+            log.info(f"welcome PM sent to {user.id} for chat {chat.id}")
+            return
         except PeerIdInvalid:
-            # Peer not in bot's cache — this happens when Pyrogram hasn't
-            # finished storing the peer from the ChatJoinRequest update yet.
-            # Wait briefly so Telegram can propagate the membership, then
-            # resolve via get_chat_member (bot is admin → always works).
-            log.debug(f"PEER_ID_INVALID for {user.id} — waiting 0.5s then resolving via get_chat_member")
-            await asyncio.sleep(0.5)
-            cm = await bot.get_chat_member(chat.id, user.id)
-            resolved_user = cm.user if cm.user else user
+            log.debug(f"PEER_ID_INVALID for {user.id} — trying fallbacks")
+
+        # ── Attempt 2: username route (no access_hash needed) ────────────────
+        username = getattr(user, "username", None)
+        if username:
             await bot.send_message(
-                chat_id=resolved_user.id,
-                text=_format_welcome(template, user=resolved_user, chat=chat),
+                chat_id=f"@{username}",
+                text=text,
                 parse_mode=HTML,
                 disable_web_page_preview=True,
             )
+            log.info(f"welcome PM sent to @{username} for chat {chat.id}")
+            return
 
-        log.info(f"welcome PM sent to {user.id} for chat {chat.id}")
+        # ── Attempt 3: raw GetParticipant → fix storage → retry send ─────────
+        # Bot is a channel admin, so Telegram accepts InputUser(user_id, 0).
+        # The response includes the real access_hash; we store it manually so
+        # Pyrogram's resolve_peer finds the correct entry on the next call.
+        await asyncio.sleep(0.3)
+        chat_peer = await bot.resolve_peer(chat.id)
+        r = await bot.invoke(
+            raw_fn.channels.GetParticipant(
+                channel=chat_peer,
+                participant=raw_types.InputUser(user_id=user.id, access_hash=0),
+            )
+        )
+        raw_user = next((u for u in r.users if u.id == user.id), None)
+        if raw_user is None:
+            raise PeerIdInvalid(f"user {user.id} absent in GetParticipant response")
+
+        await bot.storage.update_peers([
+            (
+                raw_user.id,
+                raw_user.access_hash,
+                "bot" if raw_user.bot else "user",
+                getattr(raw_user, "username", None),
+                getattr(raw_user, "phone", None),
+            )
+        ])
+
+        await bot.send_message(
+            chat_id=user.id,
+            text=text,
+            parse_mode=HTML,
+            disable_web_page_preview=True,
+        )
+        log.info(f"welcome PM sent to {user.id} (raw path) for chat {chat.id}")
+
     except Exception as e:
         log.warning(f"welcome PM to {user.id} not delivered: {e}")
 
