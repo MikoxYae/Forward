@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 from pyrogram import Client, enums
 from pyrogram.errors import FloodWait, UserAlreadyParticipant, RPCError
@@ -24,18 +25,26 @@ def _chat_link(chat) -> str:
 
 def _format_welcome(template: str, *, user, chat) -> str:
     chat_title = getattr(chat, "title", "") or ""
-    chat_link = _chat_link(chat) or "#"
+    raw_link = _chat_link(chat)
     mention = user.mention if user else "ᴜsᴇʀ"
     first_name = (user.first_name if user else "") or ""
     username = ("@" + user.username) if (user and user.username) else mention
-    return (
+
+    result = (
         template.replace("{mention}", mention)
         .replace("{first_name}", first_name)
         .replace("{username}", username)
         .replace("{chat_title}", chat_title)
-        .replace("{chat_link}", chat_link)
+        .replace("{chat_link}", raw_link if raw_link else "#")
         .replace("{user_id}", str(user.id) if user else "")
     )
+
+    # If there is no valid chat link (private channel), strip broken <a href="#"> tags
+    # so Telegram does not reject the message with a parse-entities error.
+    if not raw_link:
+        result = re.sub(r'<a\s+href="#"[^>]*>(.*?)</a>', r'\1', result, flags=re.DOTALL)
+
+    return result
 
 
 async def _do_approve(bot: Client, chat_id: int, user_id: int) -> bool:
@@ -77,7 +86,7 @@ async def _send_welcome(bot: Client, chat, user):
             disable_web_page_preview=True,
         )
     except Exception as e:
-        log.info(f"welcome PM to {user.id} not delivered: {e}")
+        log.warning(f"welcome PM to {user.id} not delivered: {e}")
 
 
 @Client.on_chat_join_request()
