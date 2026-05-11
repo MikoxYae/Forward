@@ -16,6 +16,18 @@ log = logging.getLogger("miko.accept")
 # Semaphore: allow up to 15 concurrent approvals (fast but safe)
 _approve_sem = asyncio.Semaphore(15)
 
+# Keep strong references to background tasks so the GC doesn't kill them
+# before they finish (Python event loop only holds *weak* refs to tasks).
+_bg_tasks: set = set()
+
+
+def _bg(coro) -> asyncio.Task:
+    """Schedule a fire-and-forget coroutine, keeping a strong reference."""
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
 
 def _chat_link(chat) -> str:
     if getattr(chat, "username", None):
@@ -39,8 +51,7 @@ def _format_welcome(template: str, *, user, chat) -> str:
         .replace("{user_id}", str(user.id) if user else "")
     )
 
-    # If there is no valid chat link (private channel), strip broken <a href="#"> tags
-    # so Telegram does not reject the message with a parse-entities error.
+    # Private channel — strip broken <a href="#"> so Telegram won't reject
     if not raw_link:
         result = re.sub(r'<a\s+href="#"[^>]*>(.*?)</a>', r'\1', result, flags=re.DOTALL)
 
@@ -70,7 +81,12 @@ async def _do_approve(bot: Client, chat_id: int, user_id: int) -> bool:
 
 
 async def _send_welcome(bot: Client, chat, user):
-    """Fire-and-forget welcome PM after approval."""
+    """Send welcome PM immediately after approval.
+
+    Called inline (not in a background task) so Pyrogram's peer cache for
+    the user — populated when the ChatJoinRequest update arrived — is still
+    warm and resolve_peer(user.id) will succeed.
+    """
     try:
         welcome_enabled = await db.get_chat_setting(chat.id, "welcome_enabled", True)
         if not welcome_enabled:
@@ -85,6 +101,7 @@ async def _send_welcome(bot: Client, chat, user):
             parse_mode=HTML,
             disable_web_page_preview=True,
         )
+        log.info(f"welcome PM sent to {user.id} for chat {chat.id}")
     except Exception as e:
         log.warning(f"welcome PM to {user.id} not delivered: {e}")
 
@@ -94,23 +111,35 @@ async def auto_accept(bot: Client, request: ChatJoinRequest):
     chat = request.chat
     user = request.from_user
 
-    # Save chat to DB (non-blocking, fire-and-forget)
-    asyncio.create_task(_save_chat(chat))
+    # Save chat to DB (non-blocking, fire-and-forget — use _bg to hold reference)
+    _bg(_save_chat(chat))
 
-    # Respect the requesting user's Auto Accept preference.
-    # If they have explicitly turned it OFF in /settings, skip approval.
-    user_pref = await db.get_user_setting(user.id, "auto_accept_enabled")
+    # Check the requesting user's Auto Accept preference.
+    # Wrap in try/except so a MongoDB error never blocks the approval flow.
+    try:
+        user_pref = await db.get_user_setting(user.id, "auto_accept_enabled")
+    except Exception as e:
+        log.warning(f"get_user_setting failed for {user.id}: {e} — proceeding")
+        user_pref = None
+
     if user_pref is False:
         log.info(f"auto_accept skipped for {user.id} (user opted out)")
         return
 
-    # Approve immediately — no delay
+    # Approve the user
     approved = await _do_approve(bot, chat.id, user.id)
     if not approved:
         return
 
-    # Post-approval tasks run concurrently in background
-    asyncio.create_task(_post_approve(bot, chat, user))
+    # ── Send welcome PM inline ──────────────────────────────────────────────
+    # IMPORTANT: must be awaited here (not via create_task) so that Pyrogram's
+    # peer cache — populated from the ChatJoinRequest update — is still valid.
+    # Moving this into a background task causes PeerIdInvalid errors because
+    # the task may run after the peer entry ages out of the in-memory cache.
+    await _send_welcome(bot, chat, user)
+
+    # DB saves and counters are non-critical — run them in the background.
+    _bg(_save_user_and_counters(chat, user))
 
 
 async def _save_chat(chat):
@@ -122,15 +151,6 @@ async def _save_chat(chat):
         )
     except Exception as e:
         log.warning(f"db.add_chat failed for {chat.id}: {e}")
-
-
-async def _post_approve(bot: Client, chat, user):
-    """Run DB saves, counters, and welcome PM concurrently after approval."""
-    await asyncio.gather(
-        _save_user_and_counters(chat, user),
-        _send_welcome(bot, chat, user),
-        return_exceptions=True,
-    )
 
 
 async def _save_user_and_counters(chat, user):
