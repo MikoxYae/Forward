@@ -209,23 +209,39 @@ async def approve_cmd(bot: Client, message: Message):
                     log.warning(f"approve unexpected for {user.id}: {e}")
                     failed += 1
 
-                # Send welcome PM via bot (same message as auto_accept).
-                # For pending/old requests the bot has never seen these users
-                # in any update, so their access_hash is NOT in its peer cache.
-                # Fix: call bot.get_chat_member() first — user is now in the
-                # chat and bot is admin, so this always resolves the peer and
-                # populates the cache. Then _send_welcome works normally.
+                # Send welcome PM after approval.
+                #
+                # Strategy (in order):
+                #   1. Try bot: if bot is admin, get_chat_member resolves the
+                #      peer (bot never saw these old pending users in any update).
+                #   2. Fallback to uc: the user client ALREADY has every pending
+                #      user's peer in cache from get_chat_join_requests — this
+                #      is 100% reliable regardless of whether bot is admin.
+                #   3. If both fail (user blocked all PMs) → silently skip.
                 if _approved_this_user:
+                    _welcomed = False
                     try:
+                        # Attempt 1: send via bot (preferred — looks like bot PM)
                         try:
                             cm = await bot.get_chat_member(chat_id, user.id)
                             send_user = cm.user if cm.user else user
                         except Exception:
                             send_user = user
                         await _send_welcome(bot, chat, send_user)
-                        welcomed += 1
+                        _welcomed = True
                     except Exception as e:
-                        log.debug(f"welcome skipped for {user.id}: {e}")
+                        log.debug(f"bot welcome failed for {user.id}: {e} — trying uc")
+
+                    if not _welcomed:
+                        # Attempt 2: send via user client (always has peer in cache)
+                        try:
+                            await _send_welcome(uc, chat, user)
+                            _welcomed = True
+                        except Exception as e:
+                            log.debug(f"uc welcome also failed for {user.id}: {e}")
+
+                    if _welcomed:
+                        welcomed += 1
 
                 # Live status update every ~2 seconds (Telegram rate-limits edits).
                 now = time.time()
