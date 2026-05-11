@@ -38,7 +38,7 @@ async def broadcast_cmd(bot: Client, message: Message):
         "<b>sᴛᴀʀᴛɪɴɢ ʙʀᴏᴀᴅᴄᴀsᴛ…</b>", parse_mode=HTML
     )
 
-    sent = failed = removed = 0
+    sent = failed = skipped = removed = 0
     total = await db.total_users()
     last_edit = 0
 
@@ -54,14 +54,20 @@ async def broadcast_cmd(bot: Client, message: Message):
                 sent += 1
             except Exception:
                 failed += 1
-        except (InputUserDeactivated, UserIsBlocked, PeerIdInvalid):
+        except (InputUserDeactivated, UserIsBlocked):
+            # Truly unreachable — account deleted or bot blocked. Remove from DB.
             await db.remove_user(user_id)
             removed += 1
+        except PeerIdInvalid:
+            # User never started the bot in private — peer not resolvable yet.
+            # They are alive; do NOT remove. Just skip this broadcast for them.
+            skipped += 1
+            log.info(f"broadcast skip (PeerIdInvalid, never PM'd bot): {user_id}")
         except Exception as e:
             log.warning(f"broadcast to {user_id} failed: {e}")
             failed += 1
 
-        done = sent + failed + removed
+        done = sent + failed + skipped + removed
         if done - last_edit >= 25 or done == total:
             last_edit = done
             try:
@@ -69,6 +75,7 @@ async def broadcast_cmd(bot: Client, message: Message):
                     f"<b>ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ…</b>\n\n"
                     f"<b>ᴘʀᴏɢʀᴇss:</b> <code>{done}/{total}</code>\n"
                     f"<b>sᴇɴᴛ:</b> <code>{sent}</code>\n"
+                    f"<b>sᴋɪᴘᴘᴇᴅ (ɴᴏ ᴘᴍ):</b> <code>{skipped}</code>\n"
                     f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed}</code>\n"
                     f"<b>ʀᴇᴍᴏᴠᴇᴅ:</b> <code>{removed}</code>",
                     parse_mode=HTML,
@@ -79,6 +86,7 @@ async def broadcast_cmd(bot: Client, message: Message):
     await status.edit_text(
         f"<b>ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴏᴍᴘʟᴇᴛᴇ.</b>\n\n"
         f"<b>sᴇɴᴛ:</b> <code>{sent}</code>\n"
+        f"<b>sᴋɪᴘᴘᴇᴅ (ɴᴇᴠᴇʀ ᴘᴍ'ᴅ ʙᴏᴛ):</b> <code>{skipped}</code>\n"
         f"<b>ғᴀɪʟᴇᴅ:</b> <code>{failed}</code>\n"
         f"<b>ʀᴇᴍᴏᴠᴇᴅ ᴅᴇᴀᴅ ᴜsᴇʀs:</b> <code>{removed}</code>",
         parse_mode=HTML,
